@@ -1,0 +1,5 @@
+sudo exec -it mysql8 mysql -u root -p
+sudo docker start mysql8
+sudo lsof -i :3306
+
+sudo kill -9 324 
