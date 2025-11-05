@@ -10,6 +10,8 @@ const User = require('./models/user')(sequelize);
 const Commodity = require('./models/Commodity')(sequelize);
 const Inventory = require('./models/Inventory')(sequelize);
 const Trade = require('./models/Trade')(sequelize);
+const RedemptionRule = require('./models/RedemptionRule')(sequelize);
+const RuleItem = require('./models/RuleItem')(sequelize);
 
 // User-Inventory relationship
 User.hasMany(Inventory);
@@ -28,13 +30,27 @@ Trade.belongsTo(User, { as: 'ToUser', foreignKey: 'toUserId' });
 // Commodity-Trade relationship
 Trade.belongsTo(Commodity, { foreignKey: 'commodityId' });
 
+// User-RedemptionRule relationship (one-to-one)
+User.hasOne(RedemptionRule, { foreignKey: 'UserId' });
+RedemptionRule.belongsTo(User, { foreignKey: 'UserId' });
+
+// RedemptionRule-RuleItem relationship (one-to-many)
+RedemptionRule.hasMany(RuleItem, { foreignKey: 'RedemptionRuleId' });
+RuleItem.belongsTo(RedemptionRule, { foreignKey: 'RedemptionRuleId' });
+
+// Commodity-RuleItem relationship (one-to-many)
+Commodity.hasMany(RuleItem, { foreignKey: 'CommodityId' });
+RuleItem.belongsTo(Commodity, { foreignKey: 'CommodityId' });
+
 const db = {
   sequelize,
   Sequelize,
   User,
   Commodity,
   Inventory,
-  Trade, // Add Trade to the exported db object
+  Trade,
+  RedemptionRule,
+  RuleItem,
 };
 
 module.exports = db;

@@ -93,42 +93,57 @@ io.on('connection', (socket) => {
         console.log(`Player ${user.username} (${user.id}) is ready`);
         connectedUsers[user.id] = socket;
 
-        // If player is not in game state, initialize them
+        const allCommodities = await db.Commodity.findAll();
+
         if (!gameState.players[user.id]) {
             const dbUser = await db.User.findByPk(user.id);
             gameState.players[user.id] = {
                 id: user.id,
                 username: user.username,
                 balance: dbUser.balance,
-                inventory: {}
+                inventory: {},
+                redemptionRule: null
             };
 
-            // Randomly assign initial commodities
-            const allCommodities = await db.Commodity.findAll();
             for (const commodity of allCommodities) {
                 const quantity = Math.floor(Math.random() * 10);
                 if (quantity > 0) {
-                    await db.Inventory.create({
-                        UserId: user.id,
-                        CommodityId: commodity.id,
-                        quantity: quantity
-                    });
+                    await db.Inventory.create({ UserId: user.id, CommodityId: commodity.id, quantity: quantity });
                     gameState.players[user.id].inventory[commodity.id] = quantity;
                 }
             }
         }
 
-        // Load and emit trade history
+        let rule = await db.RedemptionRule.findOne({ 
+            where: { UserId: user.id },
+            include: [{ model: db.RuleItem, include: [db.Commodity] }]
+        });
+
+        if (!rule) {
+            const reward = Math.floor(Math.random() * 3001) + 2000;
+            const newRule = await db.RedemptionRule.create({ UserId: user.id, reward });
+            const numItems = Math.floor(Math.random() * 2) + 2;
+            const shuffledCommodities = allCommodities.sort(() => 0.5 - Math.random());
+            let selectedCommodities = shuffledCommodities.slice(0, numItems);
+            const ruleItems = [];
+            for (const commodity of selectedCommodities) {
+                const quantity = Math.floor(Math.random() * 7) + 1;
+                ruleItems.push({ RedemptionRuleId: newRule.id, CommodityId: commodity.id, quantity });
+            }
+            await db.RuleItem.bulkCreate(ruleItems);
+            rule = await db.RedemptionRule.findOne({ 
+                where: { id: newRule.id },
+                include: [{model: db.RuleItem, include: [db.Commodity]}]
+            });
+        }
+
+        gameState.players[user.id].redemptionRule = rule ? rule.toJSON() : null;
+
         const tradeHistory = await db.Trade.findAll({
-            where: {
-                [db.Sequelize.Op.or]: [
-                    { fromUserId: user.id },
-                    { toUserId: user.id }
-                ]
-            },
+            where: { [db.Sequelize.Op.or]: [{ fromUserId: user.id }, { toUserId: user.id }] },
             order: [['createdAt', 'DESC']]
         });
-        socket.emit('tradeHistory', tradeHistory);
+        socket.emit('tradeHistory', tradeHistory.map(t => t.toJSON()));
 
         broadcastGameState();
     });
@@ -136,25 +151,13 @@ io.on('connection', (socket) => {
     socket.on('proposeTrade', async (tradeData) => {
         const { fromUserId, toUserId, tradeDetails, tradeId } = tradeData; 
         const toSocket = connectedUsers[toUserId];
-        
         try {
-            await db.Trade.create({
-                id: tradeId,
-                fromUserId,
-                toUserId,
-                commodityId: tradeDetails.commodityId,
-                quantity: tradeDetails.quantity,
-                price: tradeDetails.price,
-                action: tradeDetails.action,
-                status: 'pending'
-            });
-
+            await db.Trade.create({ id: tradeId, fromUserId, toUserId, commodityId: tradeDetails.commodityId, quantity: tradeDetails.quantity, price: tradeDetails.price, action: tradeDetails.action, status: 'pending' });
             if (toSocket) {
                 toSocket.emit('tradeProposal', { fromUserId, toUserId, tradeDetails, tradeId });
             }
         } catch (error) {
             console.error('Failed to save trade proposal:', error);
-            // Optionally, emit an error back to the proposer
         }
     });
 
@@ -167,7 +170,6 @@ io.on('connection', (socket) => {
             try {
                 await db.sequelize.transaction(async (t) => {
                     const { commodityId, quantity, price } = tradeDetails;
-
                     const sellerId = tradeDetails.action === 'buy' ? toUserId : fromUserId;
                     const buyerId = tradeDetails.action === 'buy' ? fromUserId : toUserId;
 
@@ -179,12 +181,10 @@ io.on('connection', (socket) => {
                     if (!sellerInventory || sellerInventory.quantity < quantity) {
                         throw new Error('Insufficient inventory');
                     }
-
                     if (buyer.balance < price) {
                         throw new Error('Insufficient balance');
                     }
 
-                    // Update inventories
                     sellerInventory.quantity -= quantity;
                     await sellerInventory.save({ transaction: t });
 
@@ -195,25 +195,20 @@ io.on('connection', (socket) => {
                     buyerInventory.quantity += quantity;
                     await buyerInventory.save({ transaction: t });
 
-                    // Update balances
                     seller.balance += price;
                     buyer.balance -= price;
-
                     await seller.save({ transaction: t });
                     await buyer.save({ transaction: t });
 
-                    // Update gameState
                     gameState.players[sellerId].balance = seller.balance;
                     gameState.players[buyerId].balance = buyer.balance;
                     gameState.players[sellerId].inventory[commodityId] = sellerInventory.quantity;
                     gameState.players[buyerId].inventory[commodityId] = buyerInventory.quantity;
 
-                    // Update trade status
                     await db.Trade.update({ status: 'successful' }, { where: { id: tradeId }, transaction: t });
-
-                    broadcastGameState();
                 });
 
+                broadcastGameState();
                 const result = { success: true, message: 'Trade successful', tradeId };
                 if (fromSocket) fromSocket.emit('tradeResult', result);
                 if (toSocket) toSocket.emit('tradeResult', result);
@@ -229,6 +224,76 @@ io.on('connection', (socket) => {
             const result = { success: false, message: 'Trade rejected', tradeId };
             if (fromSocket) fromSocket.emit('tradeResult', result);
             if (toSocket) toSocket.emit('tradeResult', result);
+        }
+    });
+
+    socket.on('redeem', async (userId) => {
+        const user = await db.User.findByPk(userId);
+        const rule = await db.RedemptionRule.findOne({ 
+            where: { UserId: userId },
+            include: [{ model: db.RuleItem, include: [db.Commodity] }]
+        });
+
+        if (!user || !rule) return socket.emit('redeemResult', { success: false, message: 'No rule found.' });
+
+        try {
+            await db.sequelize.transaction(async (t) => {
+                for (const item of rule.RuleItems) {
+                    const inventory = await db.Inventory.findOne({ where: { UserId: userId, CommodityId: item.CommodityId }, transaction: t });
+                    if (!inventory || inventory.quantity < item.quantity) {
+                        throw new Error('Insufficient commodities to redeem.');
+                    }
+                    inventory.quantity -= item.quantity;
+                    await inventory.save({ transaction: t });
+                    gameState.players[userId].inventory[item.CommodityId] = inventory.quantity;
+                }
+
+                user.balance += rule.reward;
+                await user.save({ transaction: t });
+                gameState.players[userId].balance = user.balance;
+            });
+
+            broadcastGameState();
+            socket.emit('redeemResult', { success: true, message: `Redeemed for $${rule.reward}!` });
+
+        } catch (error) {
+            socket.emit('redeemResult', { success: false, message: error.message });
+        }
+    });
+
+    socket.on('refreshCommodities', async (userId) => {
+        const user = await db.User.findByPk(userId);
+        const REFRESH_COST = 500;
+
+        if (user.balance < REFRESH_COST) {
+            return socket.emit('refreshResult', { success: false, message: 'Insufficient balance.' });
+        }
+
+        try {
+            await db.sequelize.transaction(async (t) => {
+                user.balance -= REFRESH_COST;
+                await user.save({ transaction: t });
+                gameState.players[userId].balance = user.balance;
+
+                const allCommodities = await db.Commodity.findAll();
+                for (let i = 0; i < 5; i++) {
+                    const randomCommodity = allCommodities[Math.floor(Math.random() * allCommodities.length)];
+                    const inventory = await db.Inventory.findOne({ where: { UserId: userId, CommodityId: randomCommodity.id }, transaction: t });
+                    if (inventory) {
+                        inventory.quantity += 1;
+                        await inventory.save({ transaction: t });
+                    } else {
+                        await db.Inventory.create({ UserId: userId, CommodityId: randomCommodity.id, quantity: 1 }, { transaction: t });
+                    }
+                    gameState.players[userId].inventory[randomCommodity.id] = (gameState.players[userId].inventory[randomCommodity.id] || 0) + 1;
+                }
+            });
+
+            broadcastGameState();
+            socket.emit('refreshResult', { success: true, message: 'You received 5 new items!' });
+
+        } catch (error) {
+            socket.emit('refreshResult', { success: false, message: 'An error occurred.' });
         }
     });
 
