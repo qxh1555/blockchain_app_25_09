@@ -31,7 +31,7 @@ app.post('/api/register', async (req, res) => {
     const user = await db.User.create({ username, password: hashedPassword });
     
     // Initialize user on blockchain with initial balance
-    await fabricClient.initUser(user.id.toString(), 1000);
+    await fabricClient.initUser(user.id.toString(), 100000);
     
     res.status(201).send({ message: 'User registered successfully', userId: user.id });
   } catch (error) {
@@ -137,34 +137,34 @@ io.on('connection', (socket) => {
             const allCommodities = await fabricClient.getAllCommodities();
 
             // Initialize player state
-            if (!gameState.players[user.id]) {
-                gameState.players[user.id] = {
-                    id: user.id,
-                    username: user.username,
-                    balance: userAsset.balance,
-                    inventory: {},
-                    redemptionRule: null
-                };
+            gameState.players[user.id] = {
+                id: user.id,
+                username: user.username,
+                balance: userAsset.balance,
+                inventory: {},
+                redemptionRule: null
+            };
 
-                // Get current inventory from blockchain
-                const inventory = await fabricClient.getAllInventory(userId);
-                
-                // If user has no inventory, give them random items
-                if (inventory.length === 0) {
-                    for (const commodity of allCommodities) {
-                        const quantity = Math.floor(Math.random() * 10);
-                        if (quantity > 0) {
-                            await fabricClient.updateInventory(userId, commodity.commodityId, quantity, 'add');
-                            gameState.players[user.id].inventory[commodity.commodityId] = quantity;
-                        }
-                    }
-                } else {
-                    // Load existing inventory
-                    for (const item of inventory) {
-                        gameState.players[user.id].inventory[item.commodityId] = item.quantity;
+            // Get current inventory from blockchain
+            const inventory = await fabricClient.getAllInventory(userId);
+            console.log('✓ Inventory result:', inventory);
+            
+            // If user has no inventory, give them random items
+            if (inventory.length === 0) {
+                for (const commodity of allCommodities) {
+                    const quantity = Math.floor(Math.random() * 10);
+                    if (quantity > 0) {
+                        await fabricClient.updateInventory(userId, commodity.commodityId, quantity, 'add');
+                        gameState.players[user.id].inventory[commodity.commodityId] = quantity;
                     }
                 }
+            } else {
+                // Load existing inventory
+                for (const item of inventory) {
+                    gameState.players[user.id].inventory[item.commodityId] = item.quantity;
+                }
             }
+            console.log('✓ Player state:', gameState.players[user.id]);
 
             // Get or create redemption rule
             let rule = await fabricClient.getRedemptionRule(userId);
@@ -404,19 +404,22 @@ io.on('connection', (socket) => {
                 return socket.emit('refreshResult', { success: false, message: 'Insufficient balance.' });
             }
 
-            // Deduct refresh cost with retry mechanism
-            await retryOnMVCCConflict(async () => {
-                await fabricClient.updateBalance(userIdStr, REFRESH_COST, 'subtract');
-            });
-
-            // Add 5 random commodities with retry mechanism
+            // Add 5 random commodities FIRST with retry mechanism
             const allCommodities = await fabricClient.getAllCommodities();
+            console.log('✓ All commodities:', allCommodities);
             for (let i = 0; i < 5; i++) {
                 const randomCommodity = allCommodities[Math.floor(Math.random() * allCommodities.length)];
+                console.log('✓ Random commodity:', randomCommodity);
                 await retryOnMVCCConflict(async () => {
                     await fabricClient.updateInventory(userIdStr, randomCommodity.commodityId, 1, 'add');
                 });
+                console.log('✓ Updated inventory successfully');  
             }
+
+            // Deduct refresh cost AFTER successfully adding all items
+            await retryOnMVCCConflict(async () => {
+                await fabricClient.updateBalance(userIdStr, REFRESH_COST, 'subtract');
+            });
 
             // Update local game state from blockchain
             const updatedAsset = await fabricClient.getUserAssets(userIdStr);

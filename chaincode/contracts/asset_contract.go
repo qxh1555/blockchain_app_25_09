@@ -97,8 +97,11 @@ func (c *AssetContract) GetInventory(ctx contractapi.TransactionContextInterface
 
 // GetAllInventory retrieves all inventory items for a user
 func (c *AssetContract) GetAllInventory(ctx contractapi.TransactionContextInterface, userID string) ([]*models.Inventory, error) {
-	// Use partial composite key to get all inventory items for a user
-	iterator, err := ctx.GetStub().GetStateByPartialCompositeKey(utils.InventoryPrefix, []string{userID})
+	// Use range query to get all inventory items for a user
+	startKey := fmt.Sprintf("%s%s_", utils.InventoryPrefix, userID)
+	endKey := fmt.Sprintf("%s%s_\uffff", utils.InventoryPrefix, userID)
+
+	iterator, err := ctx.GetStub().GetStateByRange(startKey, endKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get inventory iterator: %v", err)
 	}

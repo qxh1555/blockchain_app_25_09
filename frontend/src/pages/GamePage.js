@@ -107,13 +107,17 @@ const GamePage = () => {
     const otherPlayers = Object.values(gameState.players).filter(p => p.id !== user.id);
 
     const canRedeem = () => {
-        if (!self.redemptionRule) return false;
+        if (!self.redemptionRule) {
+            console.warn('No redemption rule found');
+            return false;
+        }
+        console.log('✓ Redemption rule found:', self.redemptionRule);
         return self.redemptionRule.RuleItems.every(item => (self.inventory[item.CommodityId] || 0) >= item.quantity);
     };
 
     const renderTradeCard = (trade) => {
         const { tradeId, fromUserId, toUserId, tradeDetails, direction, status, message } = trade;
-        const commodity = gameState.commodities.find(c => c.id === parseInt(tradeDetails.commodityId, 10));
+        const commodity = gameState.commodities.find(c => c.commodityId === tradeDetails.commodityId || c.commodityId === String(tradeDetails.commodityId));
         if (!commodity) return null;
 
         const fromPlayer = gameState.players[fromUserId];
@@ -190,12 +194,12 @@ const GamePage = () => {
                             <h5>Your Commodities:</h5>
                             <div className="row">
                                 {gameState.commodities.map(c => (
-                                    <div key={c.id} className="col-md-4 mb-3">
+                                    <div key={c.commodityId} className="col-md-4 mb-3">
                                         <div className="card">
-                                            <img src={c.imageUrl} className="card-img-top" alt={c.name} />
+                                            <img src={c.metadata?.imageUrl || c.imageUrl} className="card-img-top" alt={c.name} />
                                             <div className="card-body">
                                                 <h5 className="card-title">{c.name}</h5>
-                                                <p className="card-text">Quantity: {self.inventory[c.id] || 0}</p>
+                                                <p className="card-text">Quantity: {self.inventory[c.commodityId] || 0}</p>
                                             </div>
                                         </div>
                                     </div>
@@ -244,7 +248,7 @@ const GamePage = () => {
                                     <div className="col-md-3">
                                         <select name="commodityId" className="form-select" required>
                                             <option value="">Commodity...</option>
-                                            {gameState.commodities.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                            {gameState.commodities.map(c => <option key={c.commodityId} value={c.commodityId}>{c.name}</option>)}
                                         </select>
                                     </div>
                                     <div className="col-md-2">
@@ -270,7 +274,7 @@ const GamePage = () => {
                                 <p>Redeem for <strong>${self.redemptionRule.reward}</strong>:</p>
                                 <ul>
                                     {self.redemptionRule.RuleItems.map(item => (
-                                        <li key={item.id}>{item.quantity}x {item.Commodity.name}</li>
+                                        <li key={item.CommodityId}>{item.quantity}x {item.Commodity.name}</li>
                                     ))}
                                 </ul>
                                 <button className="btn btn-success w-100" disabled={!canRedeem()} onClick={handleRedeem}>Redeem</button>

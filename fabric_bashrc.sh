@@ -97,6 +97,46 @@ queryUserTrades() {
         -c "{\"function\":\"TradeContract:GetUserTrades\",\"Args\":[\"${username}\"]}"
 }
 
+queryUserInventory() {
+    local userId=$1
+    if [ -z "$userId" ]; then
+        echo -e "${RED}Usage: queryUserInventory <userId>${NC}"
+        return 1
+    fi
+    echo -e "${BLUE}Querying inventory for user: ${userId}${NC}"
+    peer chaincode query \
+        -C ${CHANNEL_NAME} \
+        -n ${CHAINCODE_NAME} \
+        -c "{\"function\":\"AssetContract:GetAllInventory\",\"Args\":[\"${userId}\"]}"
+}
+
+queryInventoryItem() {
+    local userId=$1
+    local commodityId=$2
+    if [ -z "$userId" ] || [ -z "$commodityId" ]; then
+        echo -e "${RED}Usage: queryInventoryItem <userId> <commodityId>${NC}"
+        return 1
+    fi
+    echo -e "${BLUE}Querying inventory for user ${userId}, commodity ${commodityId}${NC}"
+    peer chaincode query \
+        -C ${CHANNEL_NAME} \
+        -n ${CHAINCODE_NAME} \
+        -c "{\"function\":\"AssetContract:GetInventory\",\"Args\":[\"${userId}\",\"${commodityId}\"]}"
+}
+
+queryRedemptionRule() {
+    local userId=$1
+    if [ -z "$userId" ]; then
+        echo -e "${RED}Usage: queryRedemptionRule <userId>${NC}"
+        return 1
+    fi
+    echo -e "${BLUE}Querying redemption rule for user: ${userId}${NC}"
+    peer chaincode query \
+        -C ${CHANNEL_NAME} \
+        -n ${CHAINCODE_NAME} \
+        -c "{\"function\":\"RedemptionContract:GetRedemptionRule\",\"Args\":[\"${userId}\"]}"
+}
+
 # Invoke functions (require endorsement from both peers)
 initUser() {
     local username=$1
@@ -128,6 +168,9 @@ fabricHelp() {
     echo -e ""
     echo -e "${GREEN}Query Functions (read-only):${NC}"
     echo -e "  queryUserAssets <username>                 - Get user's assets"
+    echo -e "  queryUserInventory <userId>                - Get user's all inventory"
+    echo -e "  queryInventoryItem <userId> <commodityId>  - Get user's specific inventory item"
+    echo -e "  queryRedemptionRule <userId>               - Get user's redemption rule"
     echo -e "  queryAllCommodities                        - Get all commodities"
     echo -e "  queryCommodity <commodityName>             - Get specific commodity"
     echo -e "  queryAllTrades                             - Get all trades"
@@ -143,6 +186,9 @@ fabricHelp() {
     echo -e ""
     echo -e "${GREEN}Examples:${NC}"
     echo -e "  queryUserAssets alice"
+    echo -e "  queryUserInventory 1"
+    echo -e "  queryInventoryItem 1 commodity_gold"
+    echo -e "  queryRedemptionRule 1"
     echo -e "  buyCommodity alice wheat 10"
     echo -e "  createTrade alice wheat 5 gold 2"
     echo -e ""

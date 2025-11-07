@@ -88,7 +88,7 @@ class FabricClient {
     }
 
     // ===== Asset Contract Methods =====
-    async initUser(userId, initialBalance = 10000) {
+    async initUser(userId, initialBalance = 100000) {
         try {
             await this.contract.submitTransaction('AssetContract:InitUser', userId, initialBalance.toString());
             console.log('✓ User initialized successfully');
@@ -132,7 +132,7 @@ class FabricClient {
                 console.log(`Empty inventory result for user ${userId}, returning empty array`);
                 return [];
             }
-            
+            // console.log('✓ Inventory result:', resultStr);
             return JSON.parse(resultStr);
         } catch (error) {
             console.error(`Error getting inventory: ${error}`);
