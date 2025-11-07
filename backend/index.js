@@ -88,6 +88,27 @@ let gameState = {
     players: {},
     commodities: []
 };
+const userLocks = {}; // Lock map to prevent concurrent operations per user
+
+// Helper function to retry blockchain operations on MVCC conflicts
+async function retryOnMVCCConflict(operation, maxRetries = 3, delayMs = 100) {
+    let lastError;
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+        try {
+            return await operation();
+        } catch (error) {
+            lastError = error;
+            if (error.transactionCode === 'MVCC_READ_CONFLICT' && attempt < maxRetries - 1) {
+                console.log(`MVCC conflict detected, retrying... (attempt ${attempt + 1}/${maxRetries})`);
+                // Exponential backoff
+                await new Promise(resolve => setTimeout(resolve, delayMs * Math.pow(2, attempt)));
+                continue;
+            }
+            throw error;
+        }
+    }
+    throw lastError;
+}
 
 const broadcastGameState = () => {
     io.emit('gameStateUpdate', gameState);
@@ -108,7 +129,7 @@ io.on('connection', (socket) => {
             
             // If user doesn't exist on blockchain, initialize them
             if (!userAsset) {
-                await fabricClient.initUser(userId, 1000);
+                await fabricClient.initUser(userId, 100000);
                 userAsset = await fabricClient.getUserAssets(userId);
             }
 
@@ -206,16 +227,18 @@ io.on('connection', (socket) => {
             const toUserIdStr = toUserId.toString();
             const commodityIdStr = tradeDetails.commodityId.toString();
             
-            // Create trade on blockchain
-            await fabricClient.createTrade(
-                tradeId,
-                fromUserIdStr,
-                toUserIdStr,
-                commodityIdStr,
-                tradeDetails.quantity,
-                tradeDetails.price,
-                tradeDetails.action
-            );
+            // Create trade on blockchain with retry mechanism
+            await retryOnMVCCConflict(async () => {
+                await fabricClient.createTrade(
+                    tradeId,
+                    fromUserIdStr,
+                    toUserIdStr,
+                    commodityIdStr,
+                    tradeDetails.quantity,
+                    tradeDetails.price,
+                    tradeDetails.action
+                );
+            });
             
             if (toSocket) {
                 toSocket.emit('tradeProposal', { fromUserId, toUserId, tradeDetails, tradeId });
@@ -227,7 +250,9 @@ io.on('connection', (socket) => {
             let userMessage = 'Trade creation failed';
             const errorStr = error.message || '';
             
-            if (errorStr.includes('insufficient inventory')) {
+            if (error.transactionCode === 'MVCC_READ_CONFLICT') {
+                userMessage = 'Transaction conflict. Please try again.';
+            } else if (errorStr.includes('insufficient inventory')) {
                 userMessage = 'Insufficient inventory - seller does not have enough items';
             } else if (errorStr.includes('insufficient funds')) {
                 userMessage = 'Insufficient funds - buyer does not have enough money';
@@ -256,8 +281,10 @@ io.on('connection', (socket) => {
 
         try {
             if (accepted) {
-                // Execute trade on blockchain
-                await fabricClient.executeTrade(tradeId);
+                // Execute trade on blockchain with retry mechanism
+                await retryOnMVCCConflict(async () => {
+                    await fabricClient.executeTrade(tradeId);
+                });
 
                 // Get updated trade status
                 const trade = await fabricClient.getTradeStatus(tradeId);
@@ -289,8 +316,10 @@ io.on('connection', (socket) => {
                 if (toSocket) toSocket.emit('tradeResult', result);
 
             } else {
-                // Reject trade on blockchain
-                await fabricClient.rejectTrade(tradeId);
+                // Reject trade on blockchain with retry mechanism
+                await retryOnMVCCConflict(async () => {
+                    await fabricClient.rejectTrade(tradeId);
+                });
                 
                 const result = { success: false, message: 'Trade rejected', tradeId };
                 if (fromSocket) fromSocket.emit('tradeResult', result);
@@ -298,7 +327,10 @@ io.on('connection', (socket) => {
             }
         } catch (error) {
             console.error('Error executing trade:', error);
-            const result = { success: false, message: error.message, tradeId };
+            const message = error.transactionCode === 'MVCC_READ_CONFLICT'
+                ? 'Transaction conflict. Please try again.'
+                : error.message;
+            const result = { success: false, message, tradeId };
             if (fromSocket) fromSocket.emit('tradeResult', result);
             if (toSocket) toSocket.emit('tradeResult', result);
         }
@@ -318,8 +350,10 @@ io.on('connection', (socket) => {
             // Generate unique record ID
             const recordId = `redemption_${userId}_${Date.now()}`;
 
-            // Execute redemption on blockchain
-            await fabricClient.executeRedemption(userIdStr, recordId);
+            // Execute redemption on blockchain with retry mechanism
+            await retryOnMVCCConflict(async () => {
+                await fabricClient.executeRedemption(userIdStr, recordId);
+            });
 
             // Update local game state from blockchain
             const userAsset = await fabricClient.getUserAssets(userIdStr);
@@ -339,13 +373,28 @@ io.on('connection', (socket) => {
 
         } catch (error) {
             console.error('Error executing redemption:', error);
-            socket.emit('redeemResult', { success: false, message: error.message });
+            const message = error.transactionCode === 'MVCC_READ_CONFLICT'
+                ? 'Transaction conflict. Please try again.'
+                : error.message;
+            socket.emit('redeemResult', { success: false, message });
         }
     });
 
     socket.on('refreshCommodities', async (userId) => {
+        const userIdStr = userId.toString();
+        
+        // Check if user already has a pending refresh operation
+        if (userLocks[userIdStr]) {
+            return socket.emit('refreshResult', { 
+                success: false, 
+                message: 'Please wait, previous operation is still processing.' 
+            });
+        }
+        
+        // Acquire lock for this user
+        userLocks[userIdStr] = true;
+        
         try {
-            const userIdStr = userId.toString();
             const REFRESH_COST = 500;
 
             // Get user balance from blockchain
@@ -355,14 +404,18 @@ io.on('connection', (socket) => {
                 return socket.emit('refreshResult', { success: false, message: 'Insufficient balance.' });
             }
 
-            // Deduct refresh cost
-            await fabricClient.updateBalance(userIdStr, REFRESH_COST, 'subtract');
+            // Deduct refresh cost with retry mechanism
+            await retryOnMVCCConflict(async () => {
+                await fabricClient.updateBalance(userIdStr, REFRESH_COST, 'subtract');
+            });
 
-            // Add 5 random commodities
+            // Add 5 random commodities with retry mechanism
             const allCommodities = await fabricClient.getAllCommodities();
             for (let i = 0; i < 5; i++) {
                 const randomCommodity = allCommodities[Math.floor(Math.random() * allCommodities.length)];
-                await fabricClient.updateInventory(userIdStr, randomCommodity.commodityId, 1, 'add');
+                await retryOnMVCCConflict(async () => {
+                    await fabricClient.updateInventory(userIdStr, randomCommodity.commodityId, 1, 'add');
+                });
             }
 
             // Update local game state from blockchain
@@ -383,7 +436,13 @@ io.on('connection', (socket) => {
 
         } catch (error) {
             console.error('Error refreshing commodities:', error);
-            socket.emit('refreshResult', { success: false, message: 'An error occurred.' });
+            const message = error.transactionCode === 'MVCC_READ_CONFLICT' 
+                ? 'Transaction conflict. Please try again.' 
+                : 'An error occurred.';
+            socket.emit('refreshResult', { success: false, message });
+        } finally {
+            // Release lock
+            delete userLocks[userIdStr];
         }
     });
 
