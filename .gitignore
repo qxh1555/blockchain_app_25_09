@@ -31,3 +31,6 @@ frontend/build/
 # Package lock files (optional, but often ignored if using yarn.lock or pnpm-lock.yaml)
 package-lock.json
 
+*.tar.gz
+
+chaincode/vendor

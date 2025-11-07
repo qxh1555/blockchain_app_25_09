@@ -6,6 +6,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { randomUUID } = require('crypto');
 const db = require('./db');
+const fabricClient = require('./fabric_client');
 
 const app = express();
 const server = http.createServer(app);
@@ -18,7 +19,7 @@ const io = socketIo(server, {
 app.use(cors());
 app.use(express.json());
 
-// API Routes for Authentication
+// API Routes for Authentication (using MySQL for user credentials only)
 app.post('/api/register', async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) {
@@ -28,11 +29,16 @@ app.post('/api/register', async (req, res) => {
   try {
     const hashedPassword = await bcrypt.hash(password, 10);
     const user = await db.User.create({ username, password: hashedPassword });
+    
+    // Initialize user on blockchain with initial balance
+    await fabricClient.initUser(user.id.toString(), 1000);
+    
     res.status(201).send({ message: 'User registered successfully', userId: user.id });
   } catch (error) {
     if (error.name === 'SequelizeUniqueConstraintError') {
       return res.status(409).send('Username already exists');
     }
+    console.error('Error registering user:', error);
     res.status(500).send('Error registering user');
   }
 });
@@ -59,21 +65,22 @@ app.post('/api/login', async (req, res) => {
       res.status(401).send('Invalid credentials');
     }
   } catch (error) {
+    console.error('Error logging in:', error);
     res.status(500).send('Error logging in');
   }
 });
 
 
-// --- Game Logic (WebSockets) ---
+// --- Game Logic (WebSockets with Blockchain) ---
 const commodities = [
-    { name: 'Gold', imageUrl: '/images/gold.png' },
-    { name: 'Silver', imageUrl: '/images/silver.png' },
-    { name: 'Crude Oil', imageUrl: '/images/oil.png' },
-    { name: 'Natural Gas', imageUrl: '/images/gas.png' },
-    { name: 'Corn', imageUrl: '/images/corn.png' },
-    { name: 'Wheat', imageUrl: '/images/wheat.png' },
-    { name: 'Coffee', imageUrl: '/images/coffee.png' },
-    { name: 'Sugar', imageUrl: '/images/sugar.png' },
+    { id: '1', name: 'Gold', imageUrl: '/images/gold.png' },
+    { id: '2', name: 'Silver', imageUrl: '/images/silver.png' },
+    { id: '3', name: 'Crude Oil', imageUrl: '/images/oil.png' },
+    { id: '4', name: 'Natural Gas', imageUrl: '/images/gas.png' },
+    { id: '5', name: 'Corn', imageUrl: '/images/corn.png' },
+    { id: '6', name: 'Wheat', imageUrl: '/images/wheat.png' },
+    { id: '7', name: 'Coffee', imageUrl: '/images/coffee.png' },
+    { id: '8', name: 'Sugar', imageUrl: '/images/sugar.png' },
 ];
 
 let connectedUsers = {}; // Maps userId to socket
@@ -90,74 +97,155 @@ io.on('connection', (socket) => {
     console.log(`A user connected: ${socket.id}`);
 
     socket.on('playerReady', async (user) => {
-        console.log(`Player ${user.username} (${user.id}) is ready`);
-        connectedUsers[user.id] = socket;
+        try {
+            console.log(`Player ${user.username} (${user.id}) is ready`);
+            connectedUsers[user.id] = socket;
 
-        const allCommodities = await db.Commodity.findAll();
+            const userId = user.id.toString();
 
-        if (!gameState.players[user.id]) {
-            const dbUser = await db.User.findByPk(user.id);
-            gameState.players[user.id] = {
-                id: user.id,
-                username: user.username,
-                balance: dbUser.balance,
-                inventory: {},
-                redemptionRule: null
-            };
+            // Get user data from blockchain
+            let userAsset = await fabricClient.getUserAssets(userId);
+            
+            // If user doesn't exist on blockchain, initialize them
+            if (!userAsset) {
+                await fabricClient.initUser(userId, 1000);
+                userAsset = await fabricClient.getUserAssets(userId);
+            }
 
-            for (const commodity of allCommodities) {
-                const quantity = Math.floor(Math.random() * 10);
-                if (quantity > 0) {
-                    await db.Inventory.create({ UserId: user.id, CommodityId: commodity.id, quantity: quantity });
-                    gameState.players[user.id].inventory[commodity.id] = quantity;
+            // Get all commodities from blockchain
+            const allCommodities = await fabricClient.getAllCommodities();
+
+            // Initialize player state
+            if (!gameState.players[user.id]) {
+                gameState.players[user.id] = {
+                    id: user.id,
+                    username: user.username,
+                    balance: userAsset.balance,
+                    inventory: {},
+                    redemptionRule: null
+                };
+
+                // Get current inventory from blockchain
+                const inventory = await fabricClient.getAllInventory(userId);
+                
+                // If user has no inventory, give them random items
+                if (inventory.length === 0) {
+                    for (const commodity of allCommodities) {
+                        const quantity = Math.floor(Math.random() * 10);
+                        if (quantity > 0) {
+                            await fabricClient.updateInventory(userId, commodity.commodityId, quantity, 'add');
+                            gameState.players[user.id].inventory[commodity.commodityId] = quantity;
+                        }
+                    }
+                } else {
+                    // Load existing inventory
+                    for (const item of inventory) {
+                        gameState.players[user.id].inventory[item.commodityId] = item.quantity;
+                    }
                 }
             }
-        }
 
-        let rule = await db.RedemptionRule.findOne({ 
-            where: { UserId: user.id },
-            include: [{ model: db.RuleItem, include: [db.Commodity] }]
-        });
+            // Get or create redemption rule
+            let rule = await fabricClient.getRedemptionRule(userId);
 
-        if (!rule) {
-            const reward = Math.floor(Math.random() * 3001) + 2000;
-            const newRule = await db.RedemptionRule.create({ UserId: user.id, reward });
-            const numItems = Math.floor(Math.random() * 2) + 2;
-            const shuffledCommodities = allCommodities.sort(() => 0.5 - Math.random());
-            let selectedCommodities = shuffledCommodities.slice(0, numItems);
-            const ruleItems = [];
-            for (const commodity of selectedCommodities) {
-                const quantity = Math.floor(Math.random() * 7) + 1;
-                ruleItems.push({ RedemptionRuleId: newRule.id, CommodityId: commodity.id, quantity });
+            if (!rule) {
+                const reward = Math.floor(Math.random() * 3001) + 2000;
+                const numItems = Math.floor(Math.random() * 2) + 2;
+                const shuffledCommodities = [...allCommodities].sort(() => 0.5 - Math.random());
+                const selectedCommodities = shuffledCommodities.slice(0, numItems);
+                
+                const requiredItems = selectedCommodities.map(commodity => ({
+                    commodityId: commodity.commodityId,
+                    quantity: Math.floor(Math.random() * 7) + 1
+                }));
+
+                await fabricClient.createRedemptionRule(userId, requiredItems, reward);
+                rule = await fabricClient.getRedemptionRule(userId);
             }
-            await db.RuleItem.bulkCreate(ruleItems);
-            rule = await db.RedemptionRule.findOne({ 
-                where: { id: newRule.id },
-                include: [{model: db.RuleItem, include: [db.Commodity]}]
-            });
+
+            // Transform rule to match frontend format
+            if (rule) {
+                const ruleItems = await Promise.all(rule.requiredItems.map(async item => {
+                    const commodity = await fabricClient.getCommodity(item.commodityId);
+                    return {
+                        CommodityId: item.commodityId,
+                        quantity: item.quantity,
+                        Commodity: {
+                            id: item.commodityId,
+                            name: commodity.name,
+                            imageUrl: commodity.metadata?.imageUrl || ''
+                        }
+                    };
+                }));
+
+                gameState.players[user.id].redemptionRule = {
+                    id: rule.ruleId,
+                    UserId: userId,
+                    reward: rule.rewardAmount,
+                    RuleItems: ruleItems
+                };
+            }
+
+            // Get trade history from blockchain
+            const tradeHistory = await fabricClient.getTradeHistory(userId);
+            socket.emit('tradeHistory', tradeHistory);
+
+            broadcastGameState();
+        } catch (error) {
+            console.error('Error in playerReady:', error);
+            socket.emit('error', { message: 'Failed to initialize player' });
         }
-
-        gameState.players[user.id].redemptionRule = rule ? rule.toJSON() : null;
-
-        const tradeHistory = await db.Trade.findAll({
-            where: { [db.Sequelize.Op.or]: [{ fromUserId: user.id }, { toUserId: user.id }] },
-            order: [['createdAt', 'DESC']]
-        });
-        socket.emit('tradeHistory', tradeHistory.map(t => t.toJSON()));
-
-        broadcastGameState();
     });
 
     socket.on('proposeTrade', async (tradeData) => {
         const { fromUserId, toUserId, tradeDetails, tradeId } = tradeData; 
         const toSocket = connectedUsers[toUserId];
+        
         try {
-            await db.Trade.create({ id: tradeId, fromUserId, toUserId, commodityId: tradeDetails.commodityId, quantity: tradeDetails.quantity, price: tradeDetails.price, action: tradeDetails.action, status: 'pending' });
+            const fromUserIdStr = fromUserId.toString();
+            const toUserIdStr = toUserId.toString();
+            const commodityIdStr = tradeDetails.commodityId.toString();
+            
+            // Create trade on blockchain
+            await fabricClient.createTrade(
+                tradeId,
+                fromUserIdStr,
+                toUserIdStr,
+                commodityIdStr,
+                tradeDetails.quantity,
+                tradeDetails.price,
+                tradeDetails.action
+            );
+            
             if (toSocket) {
                 toSocket.emit('tradeProposal', { fromUserId, toUserId, tradeDetails, tradeId });
             }
         } catch (error) {
             console.error('Failed to save trade proposal:', error);
+            
+            // Parse error message for user-friendly feedback
+            let userMessage = 'Trade creation failed';
+            const errorStr = error.message || '';
+            
+            if (errorStr.includes('insufficient inventory')) {
+                userMessage = 'Insufficient inventory - seller does not have enough items';
+            } else if (errorStr.includes('insufficient funds')) {
+                userMessage = 'Insufficient funds - buyer does not have enough money';
+            } else if (errorStr.includes('does not exist')) {
+                userMessage = 'User or commodity does not exist';
+            } else if (errorStr.includes('already exists')) {
+                userMessage = 'Trade already exists';
+            } else {
+                userMessage = errorStr;
+            }
+            
+            socket.emit('tradeResult', { 
+                success: false, 
+                message: userMessage, 
+                tradeId,
+                errorType: errorStr.includes('insufficient inventory') ? 'INSUFFICIENT_INVENTORY' :
+                          errorStr.includes('insufficient funds') ? 'INSUFFICIENT_FUNDS' : 'OTHER'
+            });
         }
     });
 
@@ -166,133 +254,135 @@ io.on('connection', (socket) => {
         const fromSocket = connectedUsers[fromUserId];
         const toSocket = connectedUsers[toUserId];
 
-        if (accepted) {
-            try {
-                await db.sequelize.transaction(async (t) => {
-                    const { commodityId, quantity, price } = tradeDetails;
-                    const sellerId = tradeDetails.action === 'buy' ? toUserId : fromUserId;
-                    const buyerId = tradeDetails.action === 'buy' ? fromUserId : toUserId;
+        try {
+            if (accepted) {
+                // Execute trade on blockchain
+                await fabricClient.executeTrade(tradeId);
 
-                    const seller = await db.User.findByPk(sellerId, { transaction: t });
-                    const buyer = await db.User.findByPk(buyerId, { transaction: t });
+                // Get updated trade status
+                const trade = await fabricClient.getTradeStatus(tradeId);
 
-                    const sellerInventory = await db.Inventory.findOne({ where: { UserId: sellerId, CommodityId: commodityId }, transaction: t });
+                // Determine seller and buyer
+                const { commodityId, quantity, price } = tradeDetails;
+                const sellerId = tradeDetails.action === 'buy' ? toUserId : fromUserId;
+                const buyerId = tradeDetails.action === 'buy' ? fromUserId : toUserId;
 
-                    if (!sellerInventory || sellerInventory.quantity < quantity) {
-                        throw new Error('Insufficient inventory');
-                    }
-                    if (buyer.balance < price) {
-                        throw new Error('Insufficient balance');
-                    }
+                // Update local game state from blockchain
+                const sellerAsset = await fabricClient.getUserAssets(sellerId.toString());
+                const buyerAsset = await fabricClient.getUserAssets(buyerId.toString());
+                const sellerInventory = await fabricClient.getInventory(sellerId.toString(), commodityId.toString());
+                const buyerInventory = await fabricClient.getInventory(buyerId.toString(), commodityId.toString());
 
-                    sellerInventory.quantity -= quantity;
-                    await sellerInventory.save({ transaction: t });
-
-                    let buyerInventory = await db.Inventory.findOne({ where: { UserId: buyerId, CommodityId: commodityId }, transaction: t });
-                    if (!buyerInventory) {
-                        buyerInventory = await db.Inventory.create({ UserId: buyerId, CommodityId: commodityId, quantity: 0 }, { transaction: t });
-                    }
-                    buyerInventory.quantity += quantity;
-                    await buyerInventory.save({ transaction: t });
-
-                    seller.balance += price;
-                    buyer.balance -= price;
-                    await seller.save({ transaction: t });
-                    await buyer.save({ transaction: t });
-
-                    gameState.players[sellerId].balance = seller.balance;
-                    gameState.players[buyerId].balance = buyer.balance;
+                if (gameState.players[sellerId]) {
+                    gameState.players[sellerId].balance = sellerAsset.balance;
                     gameState.players[sellerId].inventory[commodityId] = sellerInventory.quantity;
-                    gameState.players[buyerId].inventory[commodityId] = buyerInventory.quantity;
+                }
 
-                    await db.Trade.update({ status: 'successful' }, { where: { id: tradeId }, transaction: t });
-                });
+                if (gameState.players[buyerId]) {
+                    gameState.players[buyerId].balance = buyerAsset.balance;
+                    gameState.players[buyerId].inventory[commodityId] = buyerInventory.quantity;
+                }
 
                 broadcastGameState();
                 const result = { success: true, message: 'Trade successful', tradeId };
                 if (fromSocket) fromSocket.emit('tradeResult', result);
                 if (toSocket) toSocket.emit('tradeResult', result);
 
-            } catch (error) {
-                await db.Trade.update({ status: 'failed', message: error.message }, { where: { id: tradeId } });
-                const result = { success: false, message: error.message, tradeId };
+            } else {
+                // Reject trade on blockchain
+                await fabricClient.rejectTrade(tradeId);
+                
+                const result = { success: false, message: 'Trade rejected', tradeId };
                 if (fromSocket) fromSocket.emit('tradeResult', result);
                 if (toSocket) toSocket.emit('tradeResult', result);
             }
-        } else {
-            await db.Trade.update({ status: 'rejected' }, { where: { id: tradeId } });
-            const result = { success: false, message: 'Trade rejected', tradeId };
+        } catch (error) {
+            console.error('Error executing trade:', error);
+            const result = { success: false, message: error.message, tradeId };
             if (fromSocket) fromSocket.emit('tradeResult', result);
             if (toSocket) toSocket.emit('tradeResult', result);
         }
     });
 
     socket.on('redeem', async (userId) => {
-        const user = await db.User.findByPk(userId);
-        const rule = await db.RedemptionRule.findOne({ 
-            where: { UserId: userId },
-            include: [{ model: db.RuleItem, include: [db.Commodity] }]
-        });
-
-        if (!user || !rule) return socket.emit('redeemResult', { success: false, message: 'No rule found.' });
-
         try {
-            await db.sequelize.transaction(async (t) => {
-                for (const item of rule.RuleItems) {
-                    const inventory = await db.Inventory.findOne({ where: { UserId: userId, CommodityId: item.CommodityId }, transaction: t });
-                    if (!inventory || inventory.quantity < item.quantity) {
-                        throw new Error('Insufficient commodities to redeem.');
-                    }
-                    inventory.quantity -= item.quantity;
-                    await inventory.save({ transaction: t });
-                    gameState.players[userId].inventory[item.CommodityId] = inventory.quantity;
-                }
+            const userIdStr = userId.toString();
+            
+            // Get redemption rule from blockchain
+            const rule = await fabricClient.getRedemptionRule(userIdStr);
+            
+            if (!rule) {
+                return socket.emit('redeemResult', { success: false, message: 'No redemption rule found.' });
+            }
 
-                user.balance += rule.reward;
-                await user.save({ transaction: t });
-                gameState.players[userId].balance = user.balance;
-            });
+            // Generate unique record ID
+            const recordId = `redemption_${userId}_${Date.now()}`;
+
+            // Execute redemption on blockchain
+            await fabricClient.executeRedemption(userIdStr, recordId);
+
+            // Update local game state from blockchain
+            const userAsset = await fabricClient.getUserAssets(userIdStr);
+            const inventory = await fabricClient.getAllInventory(userIdStr);
+
+            if (gameState.players[userId]) {
+                gameState.players[userId].balance = userAsset.balance;
+                gameState.players[userId].inventory = {};
+                
+                for (const item of inventory) {
+                    gameState.players[userId].inventory[item.commodityId] = item.quantity;
+                }
+            }
 
             broadcastGameState();
-            socket.emit('redeemResult', { success: true, message: `Redeemed for $${rule.reward}!` });
+            socket.emit('redeemResult', { success: true, message: `Redeemed for $${rule.rewardAmount}!` });
 
         } catch (error) {
+            console.error('Error executing redemption:', error);
             socket.emit('redeemResult', { success: false, message: error.message });
         }
     });
 
     socket.on('refreshCommodities', async (userId) => {
-        const user = await db.User.findByPk(userId);
-        const REFRESH_COST = 500;
-
-        if (user.balance < REFRESH_COST) {
-            return socket.emit('refreshResult', { success: false, message: 'Insufficient balance.' });
-        }
-
         try {
-            await db.sequelize.transaction(async (t) => {
-                user.balance -= REFRESH_COST;
-                await user.save({ transaction: t });
-                gameState.players[userId].balance = user.balance;
+            const userIdStr = userId.toString();
+            const REFRESH_COST = 500;
 
-                const allCommodities = await db.Commodity.findAll();
-                for (let i = 0; i < 5; i++) {
-                    const randomCommodity = allCommodities[Math.floor(Math.random() * allCommodities.length)];
-                    const inventory = await db.Inventory.findOne({ where: { UserId: userId, CommodityId: randomCommodity.id }, transaction: t });
-                    if (inventory) {
-                        inventory.quantity += 1;
-                        await inventory.save({ transaction: t });
-                    } else {
-                        await db.Inventory.create({ UserId: userId, CommodityId: randomCommodity.id, quantity: 1 }, { transaction: t });
-                    }
-                    gameState.players[userId].inventory[randomCommodity.id] = (gameState.players[userId].inventory[randomCommodity.id] || 0) + 1;
+            // Get user balance from blockchain
+            const userAsset = await fabricClient.getUserAssets(userIdStr);
+
+            if (userAsset.balance < REFRESH_COST) {
+                return socket.emit('refreshResult', { success: false, message: 'Insufficient balance.' });
+            }
+
+            // Deduct refresh cost
+            await fabricClient.updateBalance(userIdStr, REFRESH_COST, 'subtract');
+
+            // Add 5 random commodities
+            const allCommodities = await fabricClient.getAllCommodities();
+            for (let i = 0; i < 5; i++) {
+                const randomCommodity = allCommodities[Math.floor(Math.random() * allCommodities.length)];
+                await fabricClient.updateInventory(userIdStr, randomCommodity.commodityId, 1, 'add');
+            }
+
+            // Update local game state from blockchain
+            const updatedAsset = await fabricClient.getUserAssets(userIdStr);
+            const inventory = await fabricClient.getAllInventory(userIdStr);
+
+            if (gameState.players[userId]) {
+                gameState.players[userId].balance = updatedAsset.balance;
+                gameState.players[userId].inventory = {};
+                
+                for (const item of inventory) {
+                    gameState.players[userId].inventory[item.commodityId] = item.quantity;
                 }
-            });
+            }
 
             broadcastGameState();
             socket.emit('refreshResult', { success: true, message: 'You received 5 new items!' });
 
         } catch (error) {
+            console.error('Error refreshing commodities:', error);
             socket.emit('refreshResult', { success: false, message: 'An error occurred.' });
         }
     });
@@ -309,27 +399,51 @@ io.on('connection', (socket) => {
 });
 
 
-// Start the server and sync the database
+// Start the server
 const PORT = process.env.PORT || 3001;
 const startServer = async () => {
     try {
-        await db.sequelize.sync({ alter: true }); // Using alter to be safe with existing tables
-        console.log('Database synced successfully.');
+        // Initialize MySQL database (for user authentication only)
+        await db.sequelize.sync({ alter: true });
+        console.log('✓ Database synced successfully (authentication only).');
 
-        // Create commodities if they don't exist
-        const commodityCount = await db.Commodity.count();
-        if (commodityCount === 0) {
-            await db.Commodity.bulkCreate(commodities);
-            console.log('Created initial commodities.');
+        // Connect to Fabric network
+        await fabricClient.connect();
+        console.log('✓ Connected to Fabric blockchain network.');
+
+        // Initialize commodities on blockchain if needed
+        for (const commodity of commodities) {
+            await fabricClient.createCommodity(commodity.id, commodity.name, { imageUrl: commodity.imageUrl });
         }
-        gameState.commodities = await db.Commodity.findAll();
+        console.log('✓ Commodities initialized on blockchain.');
+
+        // Load commodities from blockchain
+        gameState.commodities = await fabricClient.getAllCommodities();
+        console.log(`✓ Loaded ${gameState.commodities.length} commodities from blockchain.`);
 
         server.listen(PORT, () => {
-            console.log(`Server is listening on port ${PORT}`);
+            console.log(`\n========================================`);
+            console.log(`✓ Server is listening on port ${PORT}`);
+            console.log(`✓ Using Hyperledger Fabric for game data storage`);
+            console.log(`========================================\n`);
         });
     } catch (error) {
-        console.error('Unable to connect to the database:', error);
+        console.error('Unable to start server:', error);
+        process.exit(1);
     }
 };
+
+// Graceful shutdown
+process.on('SIGINT', async () => {
+    console.log('\nShutting down gracefully...');
+    await fabricClient.disconnect();
+    process.exit(0);
+});
+
+process.on('SIGTERM', async () => {
+    console.log('\nShutting down gracefully...');
+    await fabricClient.disconnect();
+    process.exit(0);
+});
 
 startServer();
