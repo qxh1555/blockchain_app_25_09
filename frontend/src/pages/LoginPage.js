@@ -16,7 +16,7 @@ const LoginPage = () => {
       sessionStorage.setItem('token', response.data.token);
       navigate('/game');
     } catch (err) {
-      setError(err.response?.data || 'Login failed');
+      setError(err.response?.data || '登录失败');
     }
   };
 
@@ -26,11 +26,11 @@ const LoginPage = () => {
         <div className="col-md-6">
           <div className="card">
             <div className="card-body">
-              <h2 className="card-title text-center">Login</h2>
+              <h2 className="card-title text-center">登录</h2>
               {error && <div className="alert alert-danger">{error}</div>}
               <form onSubmit={handleLogin}>
                 <div className="mb-3">
-                  <label className="form-label">Username</label>
+                  <label className="form-label">用户名</label>
                   <input
                     type="text"
                     className="form-control"
@@ -40,7 +40,7 @@ const LoginPage = () => {
                   />
                 </div>
                 <div className="mb-3">
-                  <label className="form-label">Password</label>
+                  <label className="form-label">密码</label>
                   <input
                     type="password"
                     className="form-control"
@@ -49,10 +49,10 @@ const LoginPage = () => {
                     required
                   />
                 </div>
-                <button type="submit" className="btn btn-primary w-100">Login</button>
+                <button type="submit" className="btn btn-primary w-100">登录</button>
               </form>
               <p className="mt-3 text-center">
-                Don't have an account? <a href="/register">Register</a>
+                还没有账号？ <a href="/register">注册</a>
               </p>
             </div>
           </div>

@@ -12,7 +12,7 @@ const { performGlobalSettlement, setLeaderboardSnapshotRef } = require('./global
 const { initializeUserState } = require('./userInitializationService');
 
 // --- Blockchain Configuration ---
-const contractAddress = "0x4C85dd7217bfe37b551974a94ff0CC3027e8128a";
+const contractAddress = "0xDa5123B5aE9c6A48A579C6D7DdEaF81F04d56b7a";
 const contractABI = [
     {
       "anonymous": false,

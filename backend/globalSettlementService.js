@@ -1,5 +1,7 @@
 const db = require('./db');
 const { initializeUserState } = require('./userInitializationService');
+const userModel = require('./models/user');
+const INITIAL_BALANCE = userModel.INITIAL_BALANCE;
 
 const PROGRESSIVE_PRICE_BASE = 250;
 const TOP_PLAYER_BONUS_THRESHOLD = 10000;
@@ -25,7 +27,6 @@ async function performGlobalSettlement(io, gameState, broadcastGameState) {
 
     // 获取所有卡牌种类
     const allCommodities = await db.Commodity.findAll();
-    const INITIAL_BALANCE = 2000.0; // 降低初始余额，确保玩家需要通过交易来提升得分
 
     // 用于保存排行榜快照的得分数据
     const scoreData = [];

@@ -5,6 +5,60 @@ import { v4 as uuidv4 } from 'uuid';
 
 const SOCKET_URL = 'http://localhost:3001';
 
+// 简单的 Tooltip 组件
+const PriceTooltip = ({ quantity, unitPrice }) => {
+    const [showTooltip, setShowTooltip] = useState(false);
+    const tooltipText = `单价 = 50 + 50 × 数量。即每增加一张，单价增加50。`;
+
+    return (
+        <div 
+            className="position-relative d-inline-block"
+            onMouseEnter={() => setShowTooltip(true)}
+            onMouseLeave={() => setShowTooltip(false)}
+        >
+            <span 
+                className="badge bg-secondary rounded-circle d-inline-flex align-items-center justify-content-center ms-1" 
+                style={{ width: '18px', height: '18px', fontSize: '10px', cursor: 'help' }}
+            >
+                ?
+            </span>
+            {showTooltip && (
+                <div 
+                    className="position-absolute bg-dark text-white p-2 rounded shadow"
+                    style={{
+                        bottom: '100%',
+                        left: '50%',
+                        transform: 'translateX(-50%)',
+                        marginBottom: '5px',
+                        minWidth: '280px',
+                        maxWidth: '350px',
+                        fontSize: '12px',
+                        zIndex: 1000,
+                        whiteSpace: 'normal',
+                        lineHeight: '1.4',
+                        pointerEvents: 'auto'
+                    }}
+                >
+                    {tooltipText}
+                    <div 
+                        className="position-absolute"
+                        style={{
+                            bottom: '-5px',
+                            left: '50%',
+                            transform: 'translateX(-50%)',
+                            width: 0,
+                            height: 0,
+                            borderLeft: '5px solid transparent',
+                            borderRight: '5px solid transparent',
+                            borderTop: '5px solid #212529'
+                        }}
+                    />
+                </div>
+            )}
+        </div>
+    );
+};
+
 const GamePage = () => {
     const navigate = useNavigate();
     const [user, setUser] = useState(null);
@@ -16,6 +70,7 @@ const GamePage = () => {
     const [socket, setSocket] = useState(null);
     const [showLeaderboard, setShowLeaderboard] = useState(false);
     const [leaderboardData, setLeaderboardData] = useState([]);
+    const [debugMode, setDebugMode] = useState(false);
 
     useEffect(() => {
         const token = sessionStorage.getItem('token');
@@ -182,7 +237,7 @@ const GamePage = () => {
         }
     };
 
-    if (!user || !gameState) return <div>Loading...</div>;
+    if (!user || !gameState) return <div>加载中...</div>;
 
     const self = gameState.players[user.id];
     const otherPlayers = Object.values(gameState.players).filter(p => p.id !== user.id);
@@ -211,23 +266,23 @@ const GamePage = () => {
 
         const fromPlayer = gameState.players[fromUserId];
         const toPlayer = gameState.players[toUserId];
-        const fromUsername = fromPlayer ? fromPlayer.username : `User #${fromUserId}`;
-        const toUsername = toPlayer ? toPlayer.username : `User #${toUserId}`;
+        const fromUsername = fromPlayer ? fromPlayer.username : `用户 #${fromUserId}`;
+        const toUsername = toPlayer ? toPlayer.username : `用户 #${toUserId}`;
 
         const isReceiver = direction === 'incoming' && status === 'pending';
 
         let title = '';
-        if (direction === 'outgoing') title = `You -> ${toUsername}`;
-        else title = `${fromUsername} -> You`;
+        if (direction === 'outgoing') title = `你 -> ${toUsername}`;
+        else title = `${fromUsername} -> 你`;
 
         let statusClass = '';
         let statusText = '';
         switch (status) {
-            case 'pending': statusClass = 'text-warning'; statusText = 'Pending'; break;
+            case 'pending': statusClass = 'text-warning'; statusText = '待处理'; break;
             case 'successful':
-            case 'accepted': statusClass = 'text-success'; statusText = 'Successful'; break;
+            case 'accepted': statusClass = 'text-success'; statusText = '成功'; break;
             case 'failed':
-            case 'rejected': statusClass = 'text-danger'; statusText = 'Failed/Rejected'; break;
+            case 'rejected': statusClass = 'text-danger'; statusText = '失败/已拒绝'; break;
             default: statusClass = ''; statusText = status;
         }
 
@@ -239,17 +294,17 @@ const GamePage = () => {
                 </div>
                 <div className="card-body">
                     <p className="card-text">
-                        Action: <strong>{tradeDetails.action.toUpperCase()}</strong><br />
-                        Commodity: <strong>{commodity.name}</strong><br />
-                        Quantity: <strong>{tradeDetails.quantity}</strong><br />
-                        Price: <strong>${tradeDetails.price.toFixed(2)}</strong>
+                        操作: <strong>{tradeDetails.action === 'buy' ? '买入' : '卖出'}</strong><br />
+                        商品: <strong>{commodity.name}</strong><br />
+                        数量: <strong>{tradeDetails.quantity}</strong><br />
+                        价格: <strong>${tradeDetails.price.toFixed(2)}</strong>
                     </p>
                     {message && <p className="card-text"><small className={statusClass}>{message}</small></p>}
                 </div>
                 {isReceiver && (
                     <div className="card-footer">
-                        <button className="btn btn-success me-2" onClick={() => handleTradeResponse(trade, true)}>Accept</button>
-                        <button className="btn btn-danger" onClick={() => handleTradeResponse(trade, false)}>Reject</button>
+                        <button className="btn btn-success me-2" onClick={() => handleTradeResponse(trade, true)}>接受</button>
+                        <button className="btn btn-danger" onClick={() => handleTradeResponse(trade, false)}>拒绝</button>
                     </div>
                 )}
             </div>
@@ -317,11 +372,25 @@ const GamePage = () => {
             )}
 
             <div className="d-flex justify-content-between align-items-center mb-3">
-                <h3>Welcome, {user.username}!</h3>
-                <div>
-                    <button className="btn btn-warning me-2" onClick={handleTriggerSettlement}>手动结算</button>
+                <h3>欢迎, {user.username}!</h3>
+                <div className="d-flex align-items-center">
+                    <div className="form-check me-3">
+                        <input 
+                            className="form-check-input" 
+                            type="checkbox" 
+                            id="debugMode" 
+                            checked={debugMode}
+                            onChange={(e) => setDebugMode(e.target.checked)}
+                        />
+                        <label className="form-check-label" htmlFor="debugMode" style={{ fontSize: '14px', cursor: 'pointer' }}>
+                            调试开关
+                        </label>
+                    </div>
+                    {debugMode && (
+                        <button className="btn btn-warning me-2" onClick={handleTriggerSettlement}>手动结算</button>
+                    )}
                     <button className="btn btn-primary me-2" onClick={handleShowLeaderboard}>查看排行榜</button>
-                    <button className="btn btn-secondary" onClick={handleLogout}>Logout</button>
+                    <button className="btn btn-secondary" onClick={handleLogout}>登出</button>
                 </div>
             </div>
 
@@ -329,11 +398,11 @@ const GamePage = () => {
                 <div className="col-12">
                     <div className="card mb-4">
                         <div className="card-body">
-                            <h4 className="card-title">Your Status</h4>
-                            {countdown && <p className="fs-5 text-end">Next Global Settlement: <strong className="text-danger">{countdown}</strong></p>}
-                            {settlementPhase && <p className="fs-5 text-center text-info">Settlement Status: <strong>{settlementPhase}</strong></p>}
-                            <p className="fs-5">Balance: <strong>${self.balance.toFixed(2)}</strong></p>
-                            <h5 className="mt-4">Your Commodities:</h5>
+                            <h4 className="card-title">你的状态</h4>
+                            {countdown && <p className="fs-5 text-end">本局结算剩余时间: <strong className="text-danger">{countdown}</strong></p>}
+                            {settlementPhase && <p className="fs-5 text-center text-info">结算状态: <strong>{settlementPhase}</strong></p>}
+                            <p className="fs-5">余额: <strong>${self.balance.toFixed(2)}</strong></p>
+                            <h5 className="mt-4">你的商品:</h5>
                             <div className="row">
                                 {gameState.commodities.map(c => {
                                     const quantity = self.inventory[c.id] || 0;
@@ -370,8 +439,11 @@ const GamePage = () => {
                                                                 <small className="text-muted">总得分:</small>
                                                                 <strong className="text-success">${totalScore.toFixed(0)}</strong>
                                                                 <span className="text-muted mx-2">|</span>
-                                                                <small className="text-muted">单价:</small>
-                                                                <strong className="text-info">${unitPrice.toFixed(0)}</strong>
+                                                                <div className="d-flex align-items-center">
+                                                                    <small className="text-muted me-1">单价:</small>
+                                                                    <strong className="text-info me-1">${unitPrice.toFixed(0)}</strong>
+                                                                    <PriceTooltip quantity={quantity} unitPrice={unitPrice} />
+                                                                </div>
                                                             </div>
                                                         </div>
                                                     )}
@@ -387,7 +459,7 @@ const GamePage = () => {
                     {activeTrades.length > 0 && (
                         <div className="card mb-4">
                             <div className="card-body">
-                                <h4 className="card-title">Active Trades</h4>
+                                <h4 className="card-title">活跃交易</h4>
                                 {activeTrades.map(renderTradeCard)}
                             </div>
                         </div>
@@ -395,7 +467,7 @@ const GamePage = () => {
 
                     <div className="card mb-4">
                         <div className="card-body">
-                            <h4 className="card-title">All Players</h4>
+                            <h4 className="card-title">所有玩家</h4>
                             <div className="table-responsive">
                                 <table className="table table-bordered table-hover">
                                     <thead className="table-light">
@@ -462,35 +534,35 @@ const GamePage = () => {
 
                     <div className="card mb-4">
                         <div className="card-body">
-                            <h4 className="card-title">Propose a Trade</h4>
+                            <h4 className="card-title">提出交易</h4>
                             <form onSubmit={handleProposeTrade}>
                                 <div className="row g-2">
                                     <div className="col-md-3">
                                         <select name="toUserId" className="form-select" required>
-                                            <option value="">To Player...</option>
+                                            <option value="">选择玩家...</option>
                                             {otherPlayers.map(p => <option key={p.id} value={p.id}>{p.username}</option>)}
                                         </select>
                                     </div>
                                     <div className="col-md-2">
                                         <select name="action" className="form-select">
-                                            <option value="buy">Buy</option>
-                                            <option value="sell">Sell</option>
+                                            <option value="buy">买入</option>
+                                            <option value="sell">卖出</option>
                                         </select>
                                     </div>
                                     <div className="col-md-3">
                                         <select name="commodityId" className="form-select" required>
-                                            <option value="">Commodity...</option>
+                                            <option value="">选择商品...</option>
                                             {gameState.commodities.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                                         </select>
                                     </div>
                                     <div className="col-md-2">
-                                        <input type="number" name="quantity" placeholder="Qty" className="form-control" min="1" required />
+                                        <input type="number" name="quantity" placeholder="数量" className="form-control" min="1" required />
                                     </div>
                                     <div className="col-md-2">
-                                        <input type="number" name="price" placeholder="Price" className="form-control" step="0.01" min="0" required />
+                                        <input type="number" name="price" placeholder="价格" className="form-control" step="0.01" min="0" required />
                                     </div>
                                     <div className="col-12">
-                                        <button type="submit" className="btn btn-primary mt-2">Propose</button>
+                                        <button type="submit" className="btn btn-primary mt-2">提出</button>
                                     </div>
                                 </div>
                             </form>

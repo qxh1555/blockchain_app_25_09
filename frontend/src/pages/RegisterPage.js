@@ -15,7 +15,7 @@ const RegisterPage = () => {
       await axios.post('http://localhost:3001/api/register', { username, password });
       navigate('/login');
     } catch (err) {
-      setError(err.response?.data || 'Registration failed');
+      setError(err.response?.data || '注册失败');
     }
   };
 
@@ -25,11 +25,11 @@ const RegisterPage = () => {
         <div className="col-md-6">
           <div className="card">
             <div className="card-body">
-              <h2 className="card-title text-center">Register</h2>
+              <h2 className="card-title text-center">注册</h2>
               {error && <div className="alert alert-danger">{error}</div>}
               <form onSubmit={handleRegister}>
                 <div className="mb-3">
-                  <label className="form-label">Username</label>
+                  <label className="form-label">用户名</label>
                   <input
                     type="text"
                     className="form-control"
@@ -39,7 +39,7 @@ const RegisterPage = () => {
                   />
                 </div>
                 <div className="mb-3">
-                  <label className="form-label">Password</label>
+                  <label className="form-label">密码</label>
                   <input
                     type="password"
                     className="form-control"
@@ -48,10 +48,10 @@ const RegisterPage = () => {
                     required
                   />
                 </div>
-                <button type="submit" className="btn btn-primary w-100">Register</button>
+                <button type="submit" className="btn btn-primary w-100">注册</button>
               </form>
               <p className="mt-3 text-center">
-                Already have an account? <a href="/login">Login</a>
+                已有账号？ <a href="/login">登录</a>
               </p>
             </div>
           </div>
