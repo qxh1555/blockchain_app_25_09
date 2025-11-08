@@ -12,9 +12,10 @@ const GamePage = () => {
     const [activeTrades, setActiveTrades] = useState([]);
     const [notification, setNotification] = useState(null);
     const [countdown, setCountdown] = useState('');
-    const [leaderboard, setLeaderboard] = useState(null);
     const [settlementPhase, setSettlementPhase] = useState(null);
     const [socket, setSocket] = useState(null);
+    const [showLeaderboard, setShowLeaderboard] = useState(false);
+    const [leaderboardData, setLeaderboardData] = useState([]);
 
     useEffect(() => {
         const token = sessionStorage.getItem('token');
@@ -49,16 +50,15 @@ const GamePage = () => {
             newSocket.on('redeemResult', setNotification);
             newSocket.on('refreshResult', setNotification);
 
-            // newSocket.on('settlement-phase-1-complete', () => setSettlementPhase('Phase 1 Complete: Standard Settlement Done'));
-            // newSocket.on('settlement-phase-2-complete', () => setSettlementPhase('Phase 2 Complete: Top 3 Identified'));
-            newSocket.on('settlement-phase-3-complete', () => setSettlementPhase('Leaderboard Announced'));
+            newSocket.on('settlement-start', () => setSettlementPhase('结算进行中...'));
 
             newSocket.on('global-settlement-complete', ({ leaderboard }) => {
-                setNotification({ success: true, message: 'Global settlement complete! See leaderboard for results.' });
-                setLeaderboard(leaderboard);
+                setNotification({ success: true, message: '结算完成！查看排行榜了解结果。' });
+                setLeaderboardData(leaderboard || []);
+                setShowLeaderboard(true);
                 setSettlementPhase(null);
                 setTimeout(() => {
-                    setLeaderboard(null);
+                    setShowLeaderboard(false);
                 }, 15000);
             });
 
@@ -142,6 +142,44 @@ const GamePage = () => {
         navigate('/login');
     };
 
+    const handleShowLeaderboard = async () => {
+        try {
+            const response = await fetch('http://localhost:3001/api/leaderboard');
+            const data = await response.json();
+            setLeaderboardData(data.leaderboard || []);
+            setShowLeaderboard(true);
+        } catch (error) {
+            console.error('Failed to fetch leaderboard:', error);
+            setNotification({ success: false, message: '获取排行榜失败' });
+        }
+    };
+
+    const handleTriggerSettlement = async () => {
+        if (!window.confirm('确定要手动触发结算吗？这将计算所有用户的分数，清空物品和余额，然后重新初始化所有用户。')) {
+            return;
+        }
+        try {
+            setSettlementPhase('触发结算中...');
+            const response = await fetch('http://localhost:3001/api/admin/trigger-settlement', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            });
+            const data = await response.json();
+            if (data.success) {
+                setNotification({ success: true, message: '结算已触发，请等待完成' });
+            } else {
+                setNotification({ success: false, message: data.message || '触发结算失败' });
+                setSettlementPhase(null);
+            }
+        } catch (error) {
+            console.error('Failed to trigger settlement:', error);
+            setNotification({ success: false, message: '触发结算失败: ' + error.message });
+            setSettlementPhase(null);
+        }
+    };
+
     if (!user || !gameState) return <div>Loading...</div>;
 
     const self = gameState.players[user.id];
@@ -150,6 +188,18 @@ const GamePage = () => {
     const canRedeem = () => {
         if (!self.redemptionRule) return false;
         return self.redemptionRule.RuleItems.every(item => (self.inventory[item.CommodityId] || 0) >= item.quantity);
+    };
+
+    // 计算卡牌得分：与后端逻辑一致
+    // 单价 = 100 + 50 * (quantity - 1)
+    // 总得分 = quantity * 单价
+    const calculateCardScore = (quantity) => {
+        if (quantity === 0) return { totalScore: 0, unitPrice: 0 };
+        // 单价 = 100 + 50 * (数量 - 1)
+        const unitPrice = 100 + 50 * (quantity - 1);
+        // 总得分 = 数量 * 单价
+        const totalScore = quantity * unitPrice;
+        return { totalScore, unitPrice };
     };
 
     const renderTradeCard = (trade) => {
@@ -206,26 +256,51 @@ const GamePage = () => {
 
     return (
         <div className="container mt-4">
-            {leaderboard && (
+            {showLeaderboard && (
                 <div className="modal show" tabIndex="-1" style={{ display: 'block', backgroundColor: 'rgba(0,0,0,0.5)' }}>
-                    <div className="modal-dialog modal-dialog-centered">
+                    <div className="modal-dialog modal-dialog-centered modal-lg">
                         <div className="modal-content">
                             <div className="modal-header bg-primary text-white">
-                                <h5 className="modal-title">🏆 Global Settlement Leaderboard 🏆</h5>
-                                <button type="button" className="btn-close btn-close-white" onClick={() => setLeaderboard(null)}></button>
+                                <h5 className="modal-title">🏆 排行榜（上次结算得分）🏆</h5>
+                                <button type="button" className="btn-close btn-close-white" onClick={() => setShowLeaderboard(false)}></button>
                             </div>
                             <div className="modal-body">
-                                <p className="text-center">New balances after settlement and Top 3 adjustments!</p>
-                                <ul className="list-group">
-                                    {leaderboard.map((player, index) => (
-                                        <li key={player.id} className="list-group-item d-flex justify-content-between align-items-center fs-5">
-                                            <span>
-                                                <strong className="me-2">{index + 1}.</strong> {player.username}
-                                            </span>
-                                            <span className="badge bg-success rounded-pill">${player.balance.toFixed(2)}</span>
-                                        </li>
-                                    ))}
-                                </ul>
+                                {leaderboardData.length > 0 ? (
+                                    <div className="table-responsive">
+                                        <table className="table table-striped">
+                                            <thead>
+                                                <tr>
+                                                    <th>排名</th>
+                                                    <th>用户名</th>
+                                                    <th className="text-end">余额</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {leaderboardData.map((player) => (
+                                                    <tr key={player.id}>
+                                                        <td>
+                                                            <strong>
+                                                                {player.rank === 1 && '🥇'}
+                                                                {player.rank === 2 && '🥈'}
+                                                                {player.rank === 3 && '🥉'}
+                                                                {player.rank > 3 && player.rank}
+                                                            </strong>
+                                                        </td>
+                                                        <td>{player.username}</td>
+                                                        <td className="text-end">
+                                                            <span className="badge bg-success">${player.balance.toFixed(2)}</span>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                ) : (
+                                    <p className="text-center text-muted">暂无排行榜数据，等待下次结算</p>
+                                )}
+                            </div>
+                            <div className="modal-footer">
+                                <button type="button" className="btn btn-secondary" onClick={() => setShowLeaderboard(false)}>关闭</button>
                             </div>
                         </div>
                     </div>
@@ -241,11 +316,15 @@ const GamePage = () => {
 
             <div className="d-flex justify-content-between align-items-center mb-3">
                 <h3>Welcome, {user.username}!</h3>
-                <button className="btn btn-secondary" onClick={handleLogout}>Logout</button>
+                <div>
+                    <button className="btn btn-warning me-2" onClick={handleTriggerSettlement}>手动结算</button>
+                    <button className="btn btn-primary me-2" onClick={handleShowLeaderboard}>查看排行榜</button>
+                    <button className="btn btn-secondary" onClick={handleLogout}>Logout</button>
+                </div>
             </div>
 
             <div className="row">
-                <div className="col-md-8">
+                <div className="col-12">
                     <div className="card mb-4">
                         <div className="card-body">
                             <h4 className="card-title">Your Status</h4>
@@ -254,17 +333,51 @@ const GamePage = () => {
                             <p className="fs-5">Balance: <strong>${self.balance.toFixed(2)}</strong></p>
                             <h5 className="mt-4">Your Commodities:</h5>
                             <div className="row">
-                                {gameState.commodities.map(c => (
-                                    <div key={c.id} className="col-md-4 mb-3">
-                                        <div className="card">
-                                            <img src={c.imageUrl} className="card-img-top" alt={c.name} />
-                                            <div className="card-body">
-                                                <h5 className="card-title">{c.name}</h5>
-                                                <p className="card-text">Quantity: {self.inventory[c.id] || 0}</p>
+                                {gameState.commodities.map(c => {
+                                    const quantity = self.inventory[c.id] || 0;
+                                    const { totalScore, unitPrice } = calculateCardScore(quantity);
+                                    return (
+                                        <div key={c.id} className="col-md-4 mb-3">
+                                            <div className={`card h-100 ${quantity === 0 ? 'border-secondary opacity-75' : 'border-primary'}`}>
+                                                <div className="position-relative">
+                                                    <img 
+                                                        src={c.imageUrl} 
+                                                        className="card-img-top" 
+                                                        alt={c.name} 
+                                                        style={{ 
+                                                            width: '100%', 
+                                                            height: '200px', 
+                                                            objectFit: 'cover',
+                                                            objectPosition: 'center'
+                                                        }} 
+                                                    />
+                                                    <span className={`position-absolute top-0 end-0 m-2 badge ${quantity > 0 ? 'bg-primary' : 'bg-secondary'} fs-6 px-3 py-2`}>
+                                                        {quantity > 0 ? `×${quantity}` : '无'}
+                                                    </span>
+                                                </div>
+                                                <div className="card-body">
+                                                    <h5 className="card-title d-flex justify-content-between align-items-center mb-2">
+                                                        <span>{c.name}</span>
+                                                        <span className={`badge ${quantity > 0 ? 'bg-success' : 'bg-secondary'} fs-6 ms-2`}>
+                                                            {quantity > 0 ? `已拥有 ${quantity} 个` : '未拥有'}
+                                                        </span>
+                                                    </h5>
+                                                    {quantity > 0 && (
+                                                        <div className="mt-2">
+                                                            <div className="d-flex justify-content-between align-items-center">
+                                                                <small className="text-muted">总得分:</small>
+                                                                <strong className="text-success">${totalScore.toFixed(0)}</strong>
+                                                                <span className="text-muted mx-2">|</span>
+                                                                <small className="text-muted">单价:</small>
+                                                                <strong className="text-info">${unitPrice.toFixed(0)}</strong>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
                                             </div>
                                         </div>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         </div>
                     </div>
@@ -280,35 +393,68 @@ const GamePage = () => {
 
                     <div className="card mb-4">
                         <div className="card-body">
-                            <h4 className="card-title">Other Players</h4>
-                            {otherPlayers.map(p => (
-                                <div key={p.id} className="card mb-4">
-                                    <div className="card-header d-flex justify-content-between">
-                                        <h5 className="mb-0">{p.username}</h5>
-                                        <strong>Balance: ${p.balance.toFixed(2)}</strong>
-                                    </div>
-                                    <div className="card-body">
-                                        <div className="row">
+                            <h4 className="card-title">All Players</h4>
+                            <div className="table-responsive">
+                                <table className="table table-bordered table-hover">
+                                    <thead className="table-light">
+                                        <tr>
+                                            <th style={{ minWidth: '150px' }}>玩家</th>
+                                            <th className="text-end" style={{ minWidth: '100px' }}>余额</th>
+                                            {gameState.commodities.map(c => (
+                                                <th key={c.id} className="text-center" style={{ minWidth: '100px' }}>
+                                                    {c.name}
+                                                </th>
+                                            ))}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {/* 自己的一行 */}
+                                        <tr className="table-primary">
+                                            <td>
+                                                <strong>{self.username} (我)</strong>
+                                            </td>
+                                            <td className="text-end">
+                                                <span className="badge bg-info">${self.balance.toFixed(2)}</span>
+                                            </td>
                                             {gameState.commodities.map(c => {
-                                                const hasCommodity = (p.inventory[c.id] || 0) > 0;
+                                                const quantity = self.inventory[c.id] || 0;
                                                 return (
-                                                    <div key={c.id} className="col-md-4 mb-3">
-                                                        <div className={`card h-100 ${!hasCommodity ? 'bg-light opacity-50' : ''}`}>
-                                                            <img src={c.imageUrl} className="card-img-top" alt={c.name} style={{ height: '150px', objectFit: 'contain', paddingTop: '10px' }} />
-                                                            <div className="card-body">
-                                                                <h5 className="card-title">{c.name}</h5>
-                                                                <p className={`card-text fw-bold ${hasCommodity ? 'text-success' : 'text-muted'}`}>
-                                                                    {hasCommodity ? 'Owned' : 'Not Owned'}
-                                                                </p>
-                                                            </div>
-                                                        </div>
-                                                    </div>
+                                                    <td key={c.id} className="text-center">
+                                                        {quantity > 0 ? (
+                                                            <span className="badge bg-success">{quantity}</span>
+                                                        ) : (
+                                                            <span className="badge bg-secondary">0</span>
+                                                        )}
+                                                    </td>
                                                 );
                                             })}
-                                        </div>
-                                    </div>
-                                </div>
-                            ))}
+                                        </tr>
+                                        {/* 其他玩家 */}
+                                        {otherPlayers.map(p => (
+                                            <tr key={p.id}>
+                                                <td>
+                                                    <strong>{p.username}</strong>
+                                                </td>
+                                                <td className="text-end">
+                                                    <span className="badge bg-info">${p.balance.toFixed(2)}</span>
+                                                </td>
+                                                {gameState.commodities.map(c => {
+                                                    const quantity = p.inventory[c.id] || 0;
+                                                    return (
+                                                        <td key={c.id} className="text-center">
+                                                            {quantity > 0 ? (
+                                                                <span className="badge bg-success">✓</span>
+                                                            ) : (
+                                                                <span className="badge bg-secondary">✗</span>
+                                                            )}
+                                                        </td>
+                                                    );
+                                                })}
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
                     </div>
 
@@ -351,7 +497,7 @@ const GamePage = () => {
                 </div>
 
                 <div className="col-md-4">
-                    {self.redemptionRule && (
+                    {false && self.redemptionRule && (
                         <div className="card mb-4">
                             <div className="card-body">
                                 <h4 className="card-title">Redemption Offer</h4>
@@ -366,12 +512,14 @@ const GamePage = () => {
                         </div>
                     )}
 
-                    <div className="card mb-4">
-                        <div className="card-body">
-                            <h4 className="card-title">Actions</h4>
-                            <button className="btn btn-info w-100" disabled={self.balance < 500} onClick={handleRefreshCommodities}>Refresh Commodities ($500)</button>
+                    {false && (
+                        <div className="card mb-4">
+                            <div className="card-body">
+                                <h4 className="card-title">Actions</h4>
+                                <button className="btn btn-info w-100" disabled={self.balance < 500} onClick={handleRefreshCommodities}>Refresh Commodities ($500)</button>
+                            </div>
                         </div>
-                    </div>
+                    )}
                 </div>
             </div>
         </div>

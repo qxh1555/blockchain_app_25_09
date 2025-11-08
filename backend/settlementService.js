@@ -17,7 +17,12 @@ function startSettlementTicker(io, connectedUsersRef, broadcastGameState, gameSt
         console.log(`[Settlement] Starting settlement for user #${user.id}...`);
         const transaction = await db.sequelize.transaction();
         try {
-            let totalPayout = 0;
+            // 保存当前余额
+            const currentBalance = user.balance;
+            
+            // 计算卡牌总得分
+            // 规则：初始单价100，每多拥有一张单价+50
+            let cardTotalScore = 0;
             const userInventories = await db.Inventory.findAll({
                 where: { UserId: user.id, quantity: { [db.Sequelize.Op.gt]: 0 } },
                 transaction,
@@ -25,20 +30,24 @@ function startSettlementTicker(io, connectedUsersRef, broadcastGameState, gameSt
 
             if (userInventories.length > 0) {
                 for (const inventoryItem of userInventories) {
-                    let payoutForItem = 0;
+                    // 对于每种卡牌，计算总得分
+                    // 第1张：100，第2张：150 (100+50)，第3张：200 (100+50*2)，...
+                    let scoreForItem = 0;
                     const quantity = inventoryItem.quantity;
-                    for (let i = 1; i <= quantity; i++) {
-                        payoutForItem += i * PROGRESSIVE_PRICE_BASE;
+                    for (let i = 0; i < quantity; i++) {
+                        scoreForItem += 100 + 50 * i;
                     }
-                    totalPayout += payoutForItem;
+                    cardTotalScore += scoreForItem;
                     inventoryItem.quantity = 0;
                     await inventoryItem.save({ transaction });
                 }
             }
 
-            console.log(`[Settlement] User #${user.id} total payout is $${totalPayout}.`);
+            // 玩家得分 = 余额 + 卡牌总得分
+            const finalScore = currentBalance + cardTotalScore;
+            console.log(`[Settlement] User #${user.id} balance: $${currentBalance}, card score: $${cardTotalScore}, final score: $${finalScore}.`);
 
-            user.balance += totalPayout;
+            user.balance = finalScore;
             user.nextSettlementAt = new Date(Date.now() + SETTLEMENT_INTERVAL_MS);
             await user.save({ transaction });
 
@@ -62,8 +71,8 @@ function startSettlementTicker(io, connectedUsersRef, broadcastGameState, gameSt
             if (userSocket) {
                 userSocket.emit('settlementComplete', {
                     success: true,
-                    message: `Settlement complete! You earned $${totalPayout.toFixed(2)}.`,
-                    payout: totalPayout,
+                    message: `Settlement complete! You earned $${cardTotalScore.toFixed(2)} from cards.`,
+                    cardScore: cardTotalScore,
                     newBalance: user.balance
                 });
             }

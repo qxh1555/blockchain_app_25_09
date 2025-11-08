@@ -8,10 +8,11 @@ const jwt = require('jsonwebtoken');
 const { randomUUID } = require('crypto');
 const db = require('./db');
 const { batchOnChainTrades } = require('./onChainService');
-const { performGlobalSettlement } = require('./globalSettlementService');
+const { performGlobalSettlement, setLeaderboardSnapshotRef } = require('./globalSettlementService');
+const { initializeUserState } = require('./userInitializationService');
 
 // --- Blockchain Configuration ---
-const contractAddress = "0x4f6e894fec609F1a5AD69eA5ac83424786863FE3";
+const contractAddress = "0x4C85dd7217bfe37b551974a94ff0CC3027e8128a";
 const contractABI = [
     {
       "anonymous": false,
@@ -136,22 +137,12 @@ app.use(cors());
 app.use(express.json());
 
 /**
- * Creates an initial random inventory for a new user.
+ * 兼容旧接口：创建新用户的初始状态（不使用事务，不设置余额）
  * @param {object} user - The Sequelize user object.
  * @returns {Promise<{initialBalance: number, inventory: Array<{commodityId: number, quantity: number}>}>}
  */
 async function initializeNewUserState(user) {
-    const allCommodities = await db.Commodity.findAll();
-    const initialInventory = [];
-
-    for (const commodity of allCommodities) {
-        const quantity = Math.floor(Math.random() * 10);
-        if (quantity > 0) {
-            await db.Inventory.create({ UserId: user.id, CommodityId: commodity.id, quantity: quantity });
-            initialInventory.push({ commodityId: commodity.id, quantity });
-        }
-    }
-    return { initialBalance: user.balance, inventory: initialInventory };
+    return await initializeUserState(user);
 }
 
 // API Routes for Authentication
@@ -246,6 +237,9 @@ let gameState = {
     players: {},
     commodities: []
 };
+// 使用对象引用传递给globalSettlementService
+const leaderboardSnapshotRef = { current: null };
+setLeaderboardSnapshotRef(leaderboardSnapshotRef);
 
 const broadcastGameState = () => {
     io.emit('gameStateUpdate', gameState);
@@ -506,6 +500,30 @@ io.on('connection', (socket) => {
             }
         }
     });
+});
+
+// API端点：获取排行榜
+app.get('/api/leaderboard', (req, res) => {
+    if (leaderboardSnapshotRef.current && leaderboardSnapshotRef.current.length > 0) {
+        res.json({ leaderboard: leaderboardSnapshotRef.current });
+    } else {
+        res.json({ leaderboard: [], message: '暂无排行榜数据，等待下次结算' });
+    }
+});
+
+// API端点：管理员手动触发结算（不需要鉴权）
+app.post('/api/admin/trigger-settlement', async (req, res) => {
+    try {
+        console.log('[Admin API] Manual settlement triggered via API');
+        // 异步执行结算，不阻塞响应
+        performGlobalSettlement(io, gameState, broadcastGameState).catch(err => {
+            console.error('[Admin API] Settlement execution error:', err);
+        });
+        res.json({ success: true, message: 'Settlement triggered successfully' });
+    } catch (error) {
+        console.error('[Admin API] Failed to trigger settlement:', error);
+        res.status(500).json({ success: false, message: 'Failed to trigger settlement', error: error.message });
+    }
 });
 
 

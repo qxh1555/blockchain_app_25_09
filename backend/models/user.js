@@ -15,7 +15,7 @@ module.exports = (sequelize) => {
     balance: {
       type: DataTypes.FLOAT,
       allowNull: false,
-      defaultValue: 50000.0,
+      defaultValue: 0, // 使用其他函数初始化余额
     },
   });
 
