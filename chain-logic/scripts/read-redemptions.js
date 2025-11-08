@@ -2,7 +2,7 @@
 const hre = require("hardhat");
 
 // The address of the deployed DataRegistry contract.
-const contractAddress = "0x51D867BFd8aA363619Ba60A13Af9c000C2504E4e";
+const contractAddress = "0x942429212d6326f0bDb5c66F011EA694cf1EBE03";
 
 async function main() {
   console.log(`Connecting to contract at address: ${contractAddress}`);

@@ -4,7 +4,7 @@ const { sequelize, Trade } = require('./db');
 
 // --- Configuration ---
 // This should ideally be in a config file, but we'll keep it here for simplicity.
-const contractAddress = "0x51D867BFd8aA363619Ba60A13Af9c000C2504E4e";
+const contractAddress = "0x942429212d6326f0bDb5c66F011EA694cf1EBE03";
 const contractABI = [
     {
       "anonymous": false,

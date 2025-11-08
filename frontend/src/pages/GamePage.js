@@ -817,39 +817,259 @@ const GamePage = () => {
 
 
 
-                        <div className="card-body">
 
 
 
-                            <h4 className="card-title">Other Players</h4>
+
+                                            <div className="card-body">
 
 
 
-                            {otherPlayers.map(p => (
 
 
 
-                                <div key={p.id} className="mb-3">
+
+                                                <h4 className="card-title">Other Players</h4>
 
 
 
-                                    <h5>{p.username}</h5>
 
 
 
-                                </div>
+
+                                                {otherPlayers.map(p => (
 
 
 
-                            ))}
 
 
 
-                        </div>
+
+                                                    <div key={p.id} className="card mb-4">
 
 
 
-                    </div>
+
+
+
+
+                                                        <div className="card-header d-flex justify-content-between">
+
+
+
+
+
+
+
+                                                            <h5 className="mb-0">{p.username}</h5>
+
+
+
+
+
+
+
+                                                            <strong>Balance: ${p.balance.toFixed(2)}</strong>
+
+
+
+
+
+
+
+                                                        </div>
+
+
+
+
+
+
+
+                                                        <div className="card-body">
+
+
+
+
+
+
+
+                                                            <div className="row">
+
+
+
+
+
+
+
+                                                                {gameState.commodities.map(c => {
+
+
+
+
+
+
+
+                                                                    const hasCommodity = (p.inventory[c.id] || 0) > 0;
+
+
+
+
+
+
+
+                                                                    return (
+
+
+
+
+
+
+
+                                                                        <div key={c.id} className="col-md-4 mb-3">
+
+
+
+
+
+
+
+                                                                            <div className={`card h-100 ${!hasCommodity ? 'bg-light opacity-50' : ''}`}>
+
+
+
+
+
+
+
+                                                                                <img src={c.imageUrl} className="card-img-top" alt={c.name} style={{ height: '150px', objectFit: 'contain', paddingTop: '10px' }}/>
+
+
+
+
+
+
+
+                                                                                <div className="card-body">
+
+
+
+
+
+
+
+                                                                                    <h5 className="card-title">{c.name}</h5>
+
+
+
+
+
+
+
+                                                                                    <p className={`card-text fw-bold ${hasCommodity ? 'text-success' : 'text-muted'}`}>
+
+
+
+
+
+
+
+                                                                                        {hasCommodity ? 'Owned' : 'Not Owned'}
+
+
+
+
+
+
+
+                                                                                    </p>
+
+
+
+
+
+
+
+                                                                                </div>
+
+
+
+
+
+
+
+                                                                            </div>
+
+
+
+
+
+
+
+                                                                        </div>
+
+
+
+
+
+
+
+                                                                    );
+
+
+
+
+
+
+
+                                                                })}
+
+
+
+
+
+
+
+                                                            </div>
+
+
+
+
+
+
+
+                                                        </div>
+
+
+
+
+
+
+
+                                                    </div>
+
+
+
+
+
+
+
+                                                ))}
+
+
+
+
+
+
+
+                                            </div>
+
+
+
+
+
+
+
+                                        </div>
 
 
 

@@ -10,7 +10,7 @@ const db = require('./db');
 const { batchOnChainTrades } = require('./onChainService');
 
 // --- Blockchain Configuration ---
-const contractAddress = "0x51D867BFd8aA363619Ba60A13Af9c000C2504E4e";
+const contractAddress = "0x942429212d6326f0bDb5c66F011EA694cf1EBE03";
 const contractABI = [
     {
       "anonymous": false,
