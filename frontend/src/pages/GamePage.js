@@ -57,6 +57,8 @@ const GamePage = () => {
                 setLeaderboardData(leaderboard || []);
                 setShowLeaderboard(true);
                 setSettlementPhase(null);
+                // 清空交易记录
+                setActiveTrades([]);
                 setTimeout(() => {
                     setShowLeaderboard(false);
                 }, 15000);

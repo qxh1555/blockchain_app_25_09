@@ -108,6 +108,14 @@ async function performGlobalSettlement(io, gameState, broadcastGameState) {
         console.log('[GlobalSettlement] Leaderboard snapshot saved to memory.');
     }
 
+    // 清空所有交易记录（新周期开始）
+    try {
+        const deletedCount = await db.Trade.destroy({ where: {} });
+        console.log(`[GlobalSettlement] Cleared ${deletedCount} trade records from previous cycle.`);
+    } catch (error) {
+        console.error('[GlobalSettlement] Failed to clear trade records:', error);
+    }
+
     // 广播结算完成和排行榜
     const leaderboard = leaderboardSnapshotRef && leaderboardSnapshotRef.current
         ? leaderboardSnapshotRef.current
