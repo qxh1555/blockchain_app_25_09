@@ -87,4 +87,73 @@ contract DataRegistry {
     function getRedemptionCount() public view returns (uint) {
         return redemptionHistory.length;
     }
+
+    // --- Initial State Records ---
+
+    struct InitialStateItem {
+        uint256 commodityId;
+        uint256 quantity;
+    }
+
+    struct InitialStateRecord {
+        uint256 userId;
+        uint256 initialBalance;
+        InitialStateItem[] inventory;
+        uint256 timestamp;
+    }
+
+    InitialStateRecord[] public initialStates;
+
+    event UserInitialized(
+        uint256 userId,
+        uint256 initialBalance,
+        uint256 timestamp
+    );
+
+    function initializeUser(
+        uint256 _userId,
+        uint256 _initialBalance,
+        uint256[] memory _commodityIds,
+        uint256[] memory _quantities
+    ) public {
+        require(_commodityIds.length == _quantities.length, "Input arrays must have the same length");
+
+        // Push a new record to storage and get a reference to it.
+        InitialStateRecord storage newState = initialStates.push();
+
+        // Populate the fields of the new storage struct.
+        newState.userId = _userId;
+        newState.initialBalance = _initialBalance;
+        newState.timestamp = block.timestamp;
+
+        // Now, populate the inventory array within the storage struct.
+        for (uint i = 0; i < _commodityIds.length; i++) {
+            newState.inventory.push(InitialStateItem({
+                commodityId: _commodityIds[i],
+                quantity: _quantities[i]
+            }));
+        }
+
+        emit UserInitialized(_userId, _initialBalance, block.timestamp);
+    }
+
+    function getInitialStateCount() public view returns (uint) {
+        return initialStates.length;
+    }
+
+    function getInitialStateRecord(uint256 _index) public view returns (
+        uint256 userId,
+        uint256 initialBalance,
+        InitialStateItem[] memory inventory,
+        uint256 timestamp
+    ) {
+        require(_index < initialStates.length, "Index out of bounds");
+        InitialStateRecord storage record = initialStates[_index];
+        return (
+            record.userId,
+            record.initialBalance,
+            record.inventory,
+            record.timestamp
+        );
+    }
 }

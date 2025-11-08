@@ -4,19 +4,8 @@ const { sequelize, Trade } = require('./db');
 
 // --- Configuration ---
 // This should ideally be in a config file, but we'll keep it here for simplicity.
-const contractAddress = "0x4d8ca72AD2352fF5B52FB3a14cC34529150c0506";
+const contractAddress = "0x51D867BFd8aA363619Ba60A13Af9c000C2504E4e";
 const contractABI = [
-    {
-      "anonymous": false,
-      "inputs": [
-        { "indexed": false, "internalType": "uint256", "name": "userId", "type": "uint256" },
-        { "indexed": false, "internalType": "uint256", "name": "redemptionRuleId", "type": "uint256" },
-        { "indexed": false, "internalType": "uint256", "name": "reward", "type": "uint256" },
-        { "indexed": false, "internalType": "uint256", "name": "timestamp", "type": "uint256" }
-      ],
-      "name": "RedemptionLogged",
-      "type": "event"
-    },
     {
       "anonymous": false,
       "inputs": [
@@ -29,15 +18,25 @@ const contractABI = [
       "type": "event"
     },
     {
+      "anonymous": false,
       "inputs": [
-        { "internalType": "uint256", "name": "_userId", "type": "uint256" },
-        { "internalType": "uint256", "name": "_redemptionRuleId", "type": "uint256" },
-        { "internalType": "uint256", "name": "_reward", "type": "uint256" }
+        { "indexed": false, "internalType": "uint256", "name": "userId", "type": "uint256" },
+        { "indexed": false, "internalType": "uint256", "name": "redemptionRuleId", "type": "uint256" },
+        { "indexed": false, "internalType": "uint256", "name": "reward", "type": "uint256" },
+        { "indexed": false, "internalType": "uint256", "name": "timestamp", "type": "uint256" }
       ],
-      "name": "addRedemption",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
+      "name": "RedemptionLogged",
+      "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+          { "indexed": false, "internalType": "uint256", "name": "userId", "type": "uint256" },
+          { "indexed": false, "internalType": "uint256", "name": "initialBalance", "type": "uint256" },
+          { "indexed": false, "internalType": "uint256", "name": "timestamp", "type": "uint256" }
+        ],
+        "name": "UserInitialized",
+        "type": "event"
     },
     {
       "inputs": [
@@ -55,52 +54,64 @@ const contractABI = [
     },
     {
       "inputs": [],
-      "name": "getRedemptionCount",
-      "outputs": [
-        { "internalType": "uint256", "name": "", "type": "uint256" }
-      ],
+      "name": "getTradeCount",
+      "outputs": [ { "internalType": "uint256", "name": "", "type": "uint256" } ],
       "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        { "internalType": "uint256", "name": "_userId", "type": "uint256" },
+        { "internalType": "uint256", "name": "_redemptionRuleId", "type": "uint256" },
+        { "internalType": "uint256", "name": "_reward", "type": "uint256" }
+      ],
+      "name": "addRedemption",
+      "outputs": [],
+      "stateMutability": "nonpayable",
       "type": "function"
     },
     {
       "inputs": [],
-      "name": "getTradeCount",
-      "outputs": [
-        { "internalType": "uint256", "name": "", "type": "uint256" }
-      ],
+      "name": "getRedemptionCount",
+      "outputs": [ { "internalType": "uint256", "name": "", "type": "uint256" } ],
       "stateMutability": "view",
       "type": "function"
     },
     {
-      "inputs": [
-        { "internalType": "uint256", "name": "", "type": "uint256" }
-      ],
-      "name": "redemptionHistory",
-      "outputs": [
-        { "internalType": "uint256", "name": "userId", "type": "uint256" },
-        { "internalType": "uint256", "name": "redemptionRuleId", "type": "uint256" },
-        { "internalType": "uint256", "name": "reward", "type": "uint256" },
-        { "internalType": "uint256", "name": "timestamp", "type": "uint256" }
-      ],
-      "stateMutability": "view",
-      "type": "function"
+        "inputs": [
+            { "internalType": "uint256", "name": "_userId", "type": "uint256" },
+            { "internalType": "uint256", "name": "_initialBalance", "type": "uint256" },
+            { "internalType": "uint256[]", "name": "_commodityIds", "type": "uint256[]" },
+            { "internalType": "uint256[]", "name": "_quantities", "type": "uint256[]" }
+        ],
+        "name": "initializeUser",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
     },
     {
-      "inputs": [
-        { "internalType": "uint256", "name": "", "type": "uint256" }
-      ],
-      "name": "tradeHistory",
-      "outputs": [
-        { "internalType": "string", "name": "tradeId", "type": "string" },
-        { "internalType": "uint256", "name": "fromUserId", "type": "uint256" },
-        { "internalType": "uint256", "name": "toUserId", "type": "uint256" },
-        { "internalType": "uint256", "name": "commodityId", "type": "uint256" },
-        { "internalType": "uint256", "name": "quantity", "type": "uint256" },
-        { "internalType": "uint256", "name": "price", "type": "uint256" },
-        { "internalType": "uint256", "name": "timestamp", "type": "uint256" }
-      ],
-      "stateMutability": "view",
-      "type": "function"
+        "inputs": [],
+        "name": "getInitialStateCount",
+        "outputs": [ { "internalType": "uint256", "name": "", "type": "uint256" } ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            { "internalType": "uint256", "name": "_index", "type": "uint256" }
+        ],
+        "name": "getInitialStateRecord",
+        "outputs": [
+            { "internalType": "uint256", "name": "userId", "type": "uint256" },
+            { "internalType": "uint256", "name": "initialBalance", "type": "uint256" },
+            { "components": [
+                { "internalType": "uint256", "name": "commodityId", "type": "uint256" },
+                { "internalType": "uint256", "name": "quantity", "type": "uint256" }
+            ], "internalType": "struct DataRegistry.InitialStateItem[]", "name": "inventory", "type": "tuple[]" },
+            { "internalType": "uint256", "name": "timestamp", "type": "uint256" }
+        ],
+        "stateMutability": "view",
+        "type": "function"
     }
 ];
 const provider = new ethers.JsonRpcProvider('http://127.0.0.1:8545');

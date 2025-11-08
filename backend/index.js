@@ -10,19 +10,8 @@ const db = require('./db');
 const { batchOnChainTrades } = require('./onChainService');
 
 // --- Blockchain Configuration ---
-const contractAddress = "0x4d8ca72AD2352fF5B52FB3a14cC34529150c0506";
+const contractAddress = "0x51D867BFd8aA363619Ba60A13Af9c000C2504E4e";
 const contractABI = [
-    {
-      "anonymous": false,
-      "inputs": [
-        { "indexed": false, "internalType": "uint256", "name": "userId", "type": "uint256" },
-        { "indexed": false, "internalType": "uint256", "name": "redemptionRuleId", "type": "uint256" },
-        { "indexed": false, "internalType": "uint256", "name": "reward", "type": "uint256" },
-        { "indexed": false, "internalType": "uint256", "name": "timestamp", "type": "uint256" }
-      ],
-      "name": "RedemptionLogged",
-      "type": "event"
-    },
     {
       "anonymous": false,
       "inputs": [
@@ -35,15 +24,25 @@ const contractABI = [
       "type": "event"
     },
     {
+      "anonymous": false,
       "inputs": [
-        { "internalType": "uint256", "name": "_userId", "type": "uint256" },
-        { "internalType": "uint256", "name": "_redemptionRuleId", "type": "uint256" },
-        { "internalType": "uint256", "name": "_reward", "type": "uint256" }
+        { "indexed": false, "internalType": "uint256", "name": "userId", "type": "uint256" },
+        { "indexed": false, "internalType": "uint256", "name": "redemptionRuleId", "type": "uint256" },
+        { "indexed": false, "internalType": "uint256", "name": "reward", "type": "uint256" },
+        { "indexed": false, "internalType": "uint256", "name": "timestamp", "type": "uint256" }
       ],
-      "name": "addRedemption",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
+      "name": "RedemptionLogged",
+      "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+          { "indexed": false, "internalType": "uint256", "name": "userId", "type": "uint256" },
+          { "indexed": false, "internalType": "uint256", "name": "initialBalance", "type": "uint256" },
+          { "indexed": false, "internalType": "uint256", "name": "timestamp", "type": "uint256" }
+        ],
+        "name": "UserInitialized",
+        "type": "event"
     },
     {
       "inputs": [
@@ -61,21 +60,64 @@ const contractABI = [
     },
     {
       "inputs": [],
-      "name": "getRedemptionCount",
-      "outputs": [
-        { "internalType": "uint256", "name": "", "type": "uint256" }
-      ],
+      "name": "getTradeCount",
+      "outputs": [ { "internalType": "uint256", "name": "", "type": "uint256" } ],
       "stateMutability": "view",
       "type": "function"
     },
     {
-      "inputs": [],
-      "name": "getTradeCount",
-      "outputs": [
-        { "internalType": "uint256", "name": "", "type": "uint256" }
+      "inputs": [
+        { "internalType": "uint256", "name": "_userId", "type": "uint256" },
+        { "internalType": "uint256", "name": "_redemptionRuleId", "type": "uint256" },
+        { "internalType": "uint256", "name": "_reward", "type": "uint256" }
       ],
+      "name": "addRedemption",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "getRedemptionCount",
+      "outputs": [ { "internalType": "uint256", "name": "", "type": "uint256" } ],
       "stateMutability": "view",
       "type": "function"
+    },
+    {
+        "inputs": [
+            { "internalType": "uint256", "name": "_userId", "type": "uint256" },
+            { "internalType": "uint256", "name": "_initialBalance", "type": "uint256" },
+            { "internalType": "uint256[]", "name": "_commodityIds", "type": "uint256[]" },
+            { "internalType": "uint256[]", "name": "_quantities", "type": "uint256[]" }
+        ],
+        "name": "initializeUser",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "getInitialStateCount",
+        "outputs": [ { "internalType": "uint256", "name": "", "type": "uint256" } ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            { "internalType": "uint256", "name": "_index", "type": "uint256" }
+        ],
+        "name": "getInitialStateRecord",
+        "outputs": [
+            { "internalType": "uint256", "name": "userId", "type": "uint256" },
+            { "internalType": "uint256", "name": "initialBalance", "type": "uint256" },
+            { "components": [
+                { "internalType": "uint256", "name": "commodityId", "type": "uint256" },
+                { "internalType": "uint256", "name": "quantity", "type": "uint256" }
+            ], "internalType": "struct DataRegistry.InitialStateItem[]", "name": "inventory", "type": "tuple[]" },
+            { "internalType": "uint256", "name": "timestamp", "type": "uint256" }
+        ],
+        "stateMutability": "view",
+        "type": "function"
     }
 ];
 const provider = new ethers.JsonRpcProvider('http://127.0.0.1:8545');
@@ -92,6 +134,25 @@ const io = socketIo(server, {
 app.use(cors());
 app.use(express.json());
 
+/**
+ * Creates an initial random inventory for a new user.
+ * @param {object} user - The Sequelize user object.
+ * @returns {Promise<{initialBalance: number, inventory: Array<{commodityId: number, quantity: number}>}>}
+ */
+async function initializeNewUserState(user) {
+    const allCommodities = await db.Commodity.findAll();
+    const initialInventory = [];
+
+    for (const commodity of allCommodities) {
+        const quantity = Math.floor(Math.random() * 10);
+        if (quantity > 0) {
+            await db.Inventory.create({ UserId: user.id, CommodityId: commodity.id, quantity: quantity });
+            initialInventory.push({ commodityId: commodity.id, quantity });
+        }
+    }
+    return { initialBalance: user.balance, inventory: initialInventory };
+}
+
 // API Routes for Authentication
 app.post('/api/register', async (req, res) => {
   const { username, password } = req.body;
@@ -102,11 +163,37 @@ app.post('/api/register', async (req, res) => {
   try {
     const hashedPassword = await bcrypt.hash(password, 10);
     const user = await db.User.create({ username, password: hashedPassword });
+
+    // Initialize user state (balance is default, create inventory) and record on-chain
+    const { initialBalance, inventory } = await initializeNewUserState(user);
+
+    try {
+        console.log(`[On-Chain] Initializing state for new user ${user.id}...`);
+        const signer = await provider.getSigner(0);
+        const contract = new ethers.Contract(contractAddress, contractABI, signer);
+
+        const commodityIds = inventory.map(item => item.commodityId);
+        const quantities = inventory.map(item => item.quantity);
+
+        const tx = await contract.initializeUser(
+            user.id,
+            Math.round(initialBalance), // Pass balance as an integer
+            commodityIds,
+            quantities
+        );
+        await tx.wait();
+        console.log(`[On-Chain] Initial state for user ${user.id} successfully recorded. Tx hash: ${tx.hash}`);
+    } catch (onChainError) {
+        console.error(`[On-Chain] FAILED to record initial state for user ${user.id}. Error:`, onChainError.message);
+        // This is a non-fatal error. The primary state is in the DB.
+    }
+
     res.status(201).send({ message: 'User registered successfully', userId: user.id });
   } catch (error) {
     if (error.name === 'SequelizeUniqueConstraintError') {
       return res.status(409).send('Username already exists');
     }
+    console.error('Error registering user:', error);
     res.status(500).send('Error registering user');
   }
 });
@@ -171,21 +258,20 @@ io.on('connection', (socket) => {
 
         if (!gameState.players[user.id]) {
             const dbUser = await db.User.findByPk(user.id);
+            const userInventory = await db.Inventory.findAll({ where: { UserId: user.id } });
+            
+            const inventoryMap = {};
+            for (const item of userInventory) {
+                inventoryMap[item.CommodityId] = item.quantity;
+            }
+
             gameState.players[user.id] = {
                 id: user.id,
                 username: user.username,
                 balance: dbUser.balance,
-                inventory: {},
+                inventory: inventoryMap,
                 redemptionRule: null
             };
-
-            for (const commodity of allCommodities) {
-                const quantity = Math.floor(Math.random() * 10);
-                if (quantity > 0) {
-                    await db.Inventory.create({ UserId: user.id, CommodityId: commodity.id, quantity: quantity });
-                    gameState.players[user.id].inventory[commodity.id] = quantity;
-                }
-            }
         }
 
         let rule = await db.RedemptionRule.findOne({ 
@@ -344,7 +430,7 @@ io.on('connection', (socket) => {
             });
 
             broadcastGameState();
-            socket.emit('redeemResult', { success: true, message: `Redeemed for $${rule.reward}!` });
+            socket.emit('redeemResult', { success: true, message: `Redeemed for ${rule.reward}!` });
 
             // --- Add Redemption Record to Blockchain ---
             try {

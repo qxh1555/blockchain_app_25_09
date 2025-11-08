@@ -67,6 +67,7 @@ cd <repository-name>
       mysql:8.0
     ```
     此命令将下载 MySQL 8.0 镜像，启动一个名为 `mysql-blockchain` 的容器，并通过 `3307` 端口使其可被访问。
+    **启动数据库后要创建一个**
 
 ### 第四步：部署智能合约
 
@@ -126,3 +127,4 @@ cd <repository-name>
 -   **交易 (Trades)**: 当成功的交易累计达到10笔时，会自动批量上链。
 -   **兑换 (Redemptions)**: 成功的兑换事件会立刻上链。
 -   **数据验证**: 您可以通过运行 `chain-logic/scripts` 目录下的脚本（如 `read-trades.js` 和 `read-redemptions.js`）来验证链上数据。
+npx hardhat run scripts/read-initial-states.js --network localhost
