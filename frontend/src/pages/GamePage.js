@@ -25,7 +25,11 @@ const SOCKET_URL = 'http://localhost:3001';
 
 
 
-let socket;
+
+
+
+
+
 
 
 
@@ -37,7 +41,15 @@ const GamePage = () => {
 
 
 
+
+
+
+
     const navigate = useNavigate();
+
+
+
+
 
 
 
@@ -45,11 +57,23 @@ const GamePage = () => {
 
 
 
+
+
+
+
     const [gameState, setGameState] = useState(null);
 
 
 
+
+
+
+
     const [activeTrades, setActiveTrades] = useState([]);
+
+
+
+
 
 
 
@@ -61,7 +85,51 @@ const GamePage = () => {
 
 
 
+    const [countdown, setCountdown] = useState('');
+
+
+
+
+
+
+
+    const [leaderboard, setLeaderboard] = useState(null);
+
+
+
+
+
+
+
+    const [settlementPhase, setSettlementPhase] = useState(null);
+
+
+
+
+
+
+
+    const [socket, setSocket] = useState(null);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     useEffect(() => {
+
+
+
+
 
 
 
@@ -69,7 +137,15 @@ const GamePage = () => {
 
 
 
+
+
+
+
         if (!token) {
+
+
+
+
 
 
 
@@ -77,7 +153,15 @@ const GamePage = () => {
 
 
 
+
+
+
+
         } else {
+
+
+
+
 
 
 
@@ -85,7 +169,15 @@ const GamePage = () => {
 
 
 
+
+
+
+
                 const payload = JSON.parse(atob(token.split('.')[1]));
+
+
+
+
 
 
 
@@ -93,7 +185,15 @@ const GamePage = () => {
 
 
 
+
+
+
+
             } catch (e) {
+
+
+
+
 
 
 
@@ -101,7 +201,15 @@ const GamePage = () => {
 
 
 
+
+
+
+
                 sessionStorage.removeItem('token');
+
+
+
+
 
 
 
@@ -109,11 +217,23 @@ const GamePage = () => {
 
 
 
+
+
+
+
             }
 
 
 
+
+
+
+
         }
+
+
+
+
 
 
 
@@ -125,7 +245,19 @@ const GamePage = () => {
 
 
 
+
+
+
+
+
+
+
+
     useEffect(() => {
+
+
+
+
 
 
 
@@ -133,7 +265,15 @@ const GamePage = () => {
 
 
 
+
+
+
+
             const timer = setTimeout(() => setNotification(null), 5000);
+
+
+
+
 
 
 
@@ -141,7 +281,15 @@ const GamePage = () => {
 
 
 
+
+
+
+
         }
+
+
+
+
 
 
 
@@ -153,7 +301,19 @@ const GamePage = () => {
 
 
 
+
+
+
+
+
+
+
+
     useEffect(() => {
+
+
+
+
 
 
 
@@ -161,7 +321,11 @@ const GamePage = () => {
 
 
 
-            socket = io(SOCKET_URL);
+
+
+
+
+            const newSocket = io(SOCKET_URL);
 
 
 
@@ -169,19 +333,7 @@ const GamePage = () => {
 
 
 
-            socket.on('connect', () => socket.emit('playerReady', user));
-
-
-
-            socket.on('gameStateUpdate', setGameState);
-
-
-
-            socket.on('redeemResult', setNotification);
-
-
-
-            socket.on('refreshResult', setNotification);
+            setSocket(newSocket);
 
 
 
@@ -189,7 +341,163 @@ const GamePage = () => {
 
 
 
-            socket.on('tradeHistory', (history) => {
+
+
+
+
+
+
+
+
+            newSocket.on('connect', () => newSocket.emit('playerReady', user));
+
+
+
+
+
+
+
+            newSocket.on('gameStateUpdate', setGameState);
+
+
+
+
+
+
+
+            newSocket.on('redeemResult', setNotification);
+
+
+
+
+
+
+
+            newSocket.on('refreshResult', setNotification);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            newSocket.on('settlement-phase-1-complete', () => setSettlementPhase('Phase 1 Complete: Standard Settlement Done'));
+
+
+
+
+
+
+
+            newSocket.on('settlement-phase-2-complete', () => setSettlementPhase('Phase 2 Complete: Top 3 Identified'));
+
+
+
+
+
+
+
+            newSocket.on('settlement-phase-3-complete', () => setSettlementPhase('Phase 3 Complete: Top 3 Rules Applied'));
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            newSocket.on('global-settlement-complete', ({ leaderboard }) => {
+
+
+
+
+
+
+
+                setNotification({ success: true, message: 'Global settlement complete! See leaderboard for results.' });
+
+
+
+
+
+
+
+                setLeaderboard(leaderboard);
+
+
+
+
+
+
+
+                setSettlementPhase(null);
+
+
+
+
+
+
+
+                setTimeout(() => {
+
+
+
+
+
+
+
+                    setLeaderboard(null);
+
+
+
+
+
+
+
+                }, 15000);
+
+
+
+
+
+
+
+            });
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            newSocket.on('tradeHistory', (history) => {
+
+
+
+
 
 
 
@@ -197,7 +505,15 @@ const GamePage = () => {
 
 
 
+
+
+
+
                     tradeId: trade.id,
+
+
+
+
 
 
 
@@ -205,7 +521,15 @@ const GamePage = () => {
 
 
 
+
+
+
+
                     toUserId: trade.toUserId,
+
+
+
+
 
 
 
@@ -213,7 +537,15 @@ const GamePage = () => {
 
 
 
+
+
+
+
                     direction: trade.fromUserId === user.id ? 'outgoing' : 'incoming',
+
+
+
+
 
 
 
@@ -221,7 +553,15 @@ const GamePage = () => {
 
 
 
+
+
+
+
                     message: trade.message,
+
+
+
+
 
 
 
@@ -229,7 +569,15 @@ const GamePage = () => {
 
 
 
+
+
+
+
                 setActiveTrades(processedHistory);
+
+
+
+
 
 
 
@@ -241,7 +589,19 @@ const GamePage = () => {
 
 
 
-            socket.on('tradeProposal', (proposal) => {
+
+
+
+
+
+
+
+
+            newSocket.on('tradeProposal', (proposal) => {
+
+
+
+
 
 
 
@@ -249,7 +609,15 @@ const GamePage = () => {
 
 
 
+
+
+
+
                 setActiveTrades(prev => prev.some(t => t.tradeId === newTrade.tradeId) ? prev : [newTrade, ...prev]);
+
+
+
+
 
 
 
@@ -261,7 +629,19 @@ const GamePage = () => {
 
 
 
-            socket.on('tradeResult', (result) => {
+
+
+
+
+
+
+
+
+            newSocket.on('tradeResult', (result) => {
+
+
+
+
 
 
 
@@ -269,6 +649,10 @@ const GamePage = () => {
 
 
 
+
+
+
+
             });
 
 
@@ -277,7 +661,19 @@ const GamePage = () => {
 
 
 
-            return () => socket.disconnect();
+
+
+
+
+
+
+
+
+            return () => newSocket.disconnect();
+
+
+
+
 
 
 
@@ -285,7 +681,49 @@ const GamePage = () => {
 
 
 
+
+
+
+
     }, [user]);
+
+    useEffect(() => {
+        const calculateAndSetCountdown = () => {
+            const now = new Date();
+            const minutes = now.getMinutes();
+            const seconds = now.getSeconds();
+
+            // Check if it's the exact moment for settlement
+            if (minutes % 5 === 0 && seconds === 0) {
+                if (user && socket) {
+                    console.log("Settlement time! Emitting start-global-settlement.");
+                    socket.emit('start-global-settlement');
+                    setSettlementPhase('in-progress');
+                }
+            }
+
+            // Calculate time remaining for display
+            const minutesToNext = 5 - (minutes % 5);
+            let secondsToNext = (minutesToNext * 60) - seconds;
+
+            // At the exact boundary (e.g., 10:35:00), the old logic would calculate 300 seconds.
+            // We adjust it to show 0 for that one second.
+            if (secondsToNext === 300) {
+                secondsToNext = 0;
+            }
+
+            const displayMinutes = Math.floor(secondsToNext / 60);
+            const displaySeconds = secondsToNext % 60;
+
+            setCountdown(`${displayMinutes.toString().padStart(2, '0')}:${displaySeconds.toString().padStart(2, '0')}`);
+        };
+
+        calculateAndSetCountdown(); // Initial call
+        const interval = setInterval(calculateAndSetCountdown, 1000);
+        return () => clearInterval(interval);
+    }, [user, socket]);
+
+
 
 
 
@@ -401,19 +839,55 @@ const GamePage = () => {
 
 
 
-    const canRedeem = () => {
+        const canRedeem = () => {
 
 
 
-        if (!self.redemptionRule) return false;
 
 
 
-        return self.redemptionRule.RuleItems.every(item => (self.inventory[item.CommodityId] || 0) >= item.quantity);
+
+            if (!self.redemptionRule) return false;
 
 
 
-    };
+
+
+
+
+            return self.redemptionRule.RuleItems.every(item => (self.inventory[item.CommodityId] || 0) >= item.quantity);
+
+
+
+
+
+
+
+        };
+
+
+
+
+
+
+
+    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    
 
 
 
@@ -629,15 +1103,231 @@ const GamePage = () => {
 
 
 
-    return (
+        return (
 
 
 
-        <div className="container mt-4">
 
 
 
-            {notification && (
+
+            <div className="container mt-4">
+
+
+
+
+
+
+
+                {leaderboard && (
+
+
+
+
+
+
+
+                    <div className="modal show" tabIndex="-1" style={{ display: 'block', backgroundColor: 'rgba(0,0,0,0.5)' }}>
+
+
+
+
+
+
+
+                        <div className="modal-dialog modal-dialog-centered">
+
+
+
+
+
+
+
+                            <div className="modal-content">
+
+
+
+
+
+
+
+                                <div className="modal-header bg-primary text-white">
+
+
+
+
+
+
+
+                                    <h5 className="modal-title">🏆 Global Settlement Leaderboard 🏆</h5>
+
+
+
+
+
+
+
+                                    <button type="button" className="btn-close btn-close-white" onClick={() => setLeaderboard(null)}></button>
+
+
+
+
+
+
+
+                                </div>
+
+
+
+
+
+
+
+                                <div className="modal-body">
+
+
+
+
+
+
+
+                                    <p className="text-center">New balances after settlement and Top 3 adjustments!</p>
+
+
+
+
+
+
+
+                                    <ul className="list-group">
+
+
+
+
+
+
+
+                                        {leaderboard.map((player, index) => (
+
+
+
+
+
+
+
+                                            <li key={player.id} className="list-group-item d-flex justify-content-between align-items-center fs-5">
+
+
+
+
+
+
+
+                                                <span>
+
+
+
+
+
+
+
+                                                    <strong className="me-2">{index + 1}.</strong> {player.username}
+
+
+
+
+
+
+
+                                                </span>
+
+
+
+
+
+
+
+                                                <span className="badge bg-success rounded-pill">${player.balance.toFixed(2)}</span>
+
+
+
+
+
+
+
+                                            </li>
+
+
+
+
+
+
+
+                                        ))}
+
+
+
+
+
+
+
+                                    </ul>
+
+
+
+
+
+
+
+                                </div>
+
+
+
+
+
+
+
+                            </div>
+
+
+
+
+
+
+
+                        </div>
+
+
+
+
+
+
+
+                    </div>
+
+
+
+
+
+
+
+                )}
+
+
+
+
+
+
+
+    
+
+
+
+
+
+
+
+                {notification && (
 
 
 
@@ -697,19 +1387,18 @@ const GamePage = () => {
 
 
 
-                        <div className="card-body">
+                                                <div className="card-body">
 
 
 
-                            <h4 className="card-title">Your Status</h4>
+                                                                                                        <h4 className="card-title">Your Status</h4>
+                                                                                                        {countdown && <p className="fs-5 text-end">Next Global Settlement: <strong className="text-danger">{countdown}</strong></p>}
+                                                                                                        {settlementPhase && <p className="fs-5 text-center text-info">Settlement Status: <strong>{settlementPhase}</strong></p>}
+                                                                                                        <p className="fs-5">Balance: <strong>${self.balance.toFixed(2)}</strong></p>
 
 
 
-                            <p>Balance: ${self.balance.toFixed(2)}</p>
-
-
-
-                            <h5>Your Commodities:</h5>
+                                                                                                        <h5 className="mt-4">Your Commodities:</h5>
 
 
 

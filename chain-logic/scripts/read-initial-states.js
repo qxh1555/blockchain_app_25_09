@@ -1,6 +1,6 @@
 const hre = require("hardhat");
 
-const contractAddress = "0x942429212d6326f0bDb5c66F011EA694cf1EBE03";
+const contractAddress = "0x4f6e894fec609F1a5AD69eA5ac83424786863FE3";
 
 async function main() {
   console.log(`Connecting to contract at address: ${contractAddress}`);

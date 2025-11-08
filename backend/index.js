@@ -8,9 +8,10 @@ const jwt = require('jsonwebtoken');
 const { randomUUID } = require('crypto');
 const db = require('./db');
 const { batchOnChainTrades } = require('./onChainService');
+const { performGlobalSettlement } = require('./globalSettlementService');
 
 // --- Blockchain Configuration ---
-const contractAddress = "0x942429212d6326f0bDb5c66F011EA694cf1EBE03";
+const contractAddress = "0x4f6e894fec609F1a5AD69eA5ac83424786863FE3";
 const contractABI = [
     {
       "anonymous": false,
@@ -162,7 +163,10 @@ app.post('/api/register', async (req, res) => {
 
   try {
     const hashedPassword = await bcrypt.hash(password, 10);
-    const user = await db.User.create({ username, password: hashedPassword });
+    const user = await db.User.create({
+        username,
+        password: hashedPassword,
+    });
 
     // Initialize user state (balance is default, create inventory) and record on-chain
     const { initialBalance, inventory } = await initializeNewUserState(user);
@@ -270,7 +274,7 @@ io.on('connection', (socket) => {
                 username: user.username,
                 balance: dbUser.balance,
                 inventory: inventoryMap,
-                redemptionRule: null
+                redemptionRule: null,
             };
         }
 
@@ -488,6 +492,11 @@ io.on('connection', (socket) => {
         }
     });
 
+    socket.on('start-global-settlement', () => {
+        console.log('Received start-global-settlement event');
+        performGlobalSettlement(io, gameState, broadcastGameState);
+    });
+
     socket.on('disconnect', () => {
         console.log(`A user disconnected: ${socket.id}`);
         for (const userId in connectedUsers) {
@@ -518,6 +527,7 @@ const startServer = async () => {
         server.listen(PORT, () => {
             console.log(`Server is listening on port ${PORT}`);
         });
+
     } catch (error) {
         console.error('Unable to connect to the database:', error);
     }
