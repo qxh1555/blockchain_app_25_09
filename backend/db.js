@@ -4,6 +4,7 @@ const { Sequelize } = require('sequelize');
 const sequelize = new Sequelize('bc_db', 'root', '123456', {
   host: 'localhost',
   dialect: 'mysql',
+  port: 3307,
 });
 
 const User = require('./models/user')(sequelize);

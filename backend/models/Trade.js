@@ -24,14 +24,6 @@ module.exports = (sequelize) => {
         key: 'id',
       },
     },
-    commodityId: {
-      type: DataTypes.INTEGER,
-      allowNull: false,
-      references: {
-        model: 'Commodities',
-        key: 'id',
-      },
-    },
     quantity: {
       type: DataTypes.INTEGER,
       allowNull: false,
@@ -52,6 +44,11 @@ module.exports = (sequelize) => {
     message: {
       type: DataTypes.STRING,
       allowNull: true,
+    },
+    onChain: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
     },
   });
 

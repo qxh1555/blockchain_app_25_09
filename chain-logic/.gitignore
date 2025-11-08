@@ -1,0 +1,14 @@
+# Node
+node_modules
+npm-debug.log
+yarn-error.log
+
+# Hardhat
+coverage
+coverage.json
+cache
+artifacts
+typechain-types
+
+# Env
+.env

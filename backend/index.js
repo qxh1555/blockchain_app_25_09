@@ -1,4 +1,5 @@
 const express = require('express');
+const { ethers } = require('ethers');
 const http = require('http');
 const socketIo = require('socket.io');
 const cors = require('cors');
@@ -6,6 +7,79 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { randomUUID } = require('crypto');
 const db = require('./db');
+const { batchOnChainTrades } = require('./onChainService');
+
+// --- Blockchain Configuration ---
+const contractAddress = "0x4d8ca72AD2352fF5B52FB3a14cC34529150c0506";
+const contractABI = [
+    {
+      "anonymous": false,
+      "inputs": [
+        { "indexed": false, "internalType": "uint256", "name": "userId", "type": "uint256" },
+        { "indexed": false, "internalType": "uint256", "name": "redemptionRuleId", "type": "uint256" },
+        { "indexed": false, "internalType": "uint256", "name": "reward", "type": "uint256" },
+        { "indexed": false, "internalType": "uint256", "name": "timestamp", "type": "uint256" }
+      ],
+      "name": "RedemptionLogged",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        { "indexed": false, "internalType": "string", "name": "tradeId", "type": "string" },
+        { "indexed": false, "internalType": "uint256", "name": "fromUserId", "type": "uint256" },
+        { "indexed": false, "internalType": "uint256", "name": "toUserId", "type": "uint256" },
+        { "indexed": false, "internalType": "uint256", "name": "timestamp", "type": "uint256" }
+      ],
+      "name": "TradeLogged",
+      "type": "event"
+    },
+    {
+      "inputs": [
+        { "internalType": "uint256", "name": "_userId", "type": "uint256" },
+        { "internalType": "uint256", "name": "_redemptionRuleId", "type": "uint256" },
+        { "internalType": "uint256", "name": "_reward", "type": "uint256" }
+      ],
+      "name": "addRedemption",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        { "internalType": "string", "name": "_tradeId", "type": "string" },
+        { "internalType": "uint256", "name": "_fromUserId", "type": "uint256" },
+        { "internalType": "uint256", "name": "_toUserId", "type": "uint256" },
+        { "internalType": "uint256", "name": "_commodityId", "type": "uint256" },
+        { "internalType": "uint256", "name": "_quantity", "type": "uint256" },
+        { "internalType": "uint256", "name": "_price", "type": "uint256" }
+      ],
+      "name": "addTrade",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "getRedemptionCount",
+      "outputs": [
+        { "internalType": "uint256", "name": "", "type": "uint256" }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "getTradeCount",
+      "outputs": [
+        { "internalType": "uint256", "name": "", "type": "uint256" }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    }
+];
+const provider = new ethers.JsonRpcProvider('http://127.0.0.1:8545');
+// --- End of Blockchain Configuration ---
 
 const app = express();
 const server = http.createServer(app);
@@ -213,6 +287,22 @@ io.on('connection', (socket) => {
                 if (fromSocket) fromSocket.emit('tradeResult', result);
                 if (toSocket) toSocket.emit('tradeResult', result);
 
+                // Check if we need to trigger the batch on-chain process
+                const pendingOnChainCount = await db.Trade.count({
+                  where: { status: 'successful', onChain: false }
+                });
+
+                console.log(`[Trigger Check] Pending on-chain trades: ${pendingOnChainCount}`);
+
+                if (pendingOnChainCount >= 10) {
+                  console.log(`[Trigger Check] Threshold of 10 reached. Starting batch on-chain process in the background...`);
+                  // We call this without await to not block the response.
+                  // Errors will be logged by the service itself.
+                  batchOnChainTrades().catch(err => {
+                    console.error("[Trigger Check] Background on-chain process failed:", err);
+                  });
+                }
+
             } catch (error) {
                 await db.Trade.update({ status: 'failed', message: error.message }, { where: { id: tradeId } });
                 const result = { success: false, message: error.message, tradeId };
@@ -255,6 +345,21 @@ io.on('connection', (socket) => {
 
             broadcastGameState();
             socket.emit('redeemResult', { success: true, message: `Redeemed for $${rule.reward}!` });
+
+            // --- Add Redemption Record to Blockchain ---
+            try {
+                console.log(`[On-Chain] Submitting redemption record for user ${userId}...`);
+                const signer = await provider.getSigner(0);
+                const contract = new ethers.Contract(contractAddress, contractABI, signer);
+
+                const tx = await contract.addRedemption(userId, rule.id, rule.reward);
+                await tx.wait();
+                console.log(`[On-Chain] Redemption for user ${userId} successfully recorded. Tx hash: ${tx.hash}`);
+            } catch (onChainError) {
+                // Log the error, but don't send a failure to the user, as the off-chain part was successful.
+                console.error(`[On-Chain] FAILED to record redemption for user ${userId} on the blockchain. Error:`, onChainError);
+            }
+            // --- End of On-Chain Logic ---
 
         } catch (error) {
             socket.emit('redeemResult', { success: false, message: error.message });

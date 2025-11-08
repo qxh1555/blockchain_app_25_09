@@ -3,3 +3,19 @@ sudo docker start mysql8
 sudo lsof -i :3306
 
 sudo kill -9 324 
+
+docker run -d \
+  --name mysql-blockchain \
+  -e MYSQL_ROOT_PASSWORD=123456 \
+  -e MYSQL_DATABASE=bc_db \
+  -p 3307:3306 \
+  mysql:8.0
+
+docker start mysql-blockchain
+docker rm
+docker stop
+  mysql -u root -P 3307 -h localhost -p
+
+  cd chain-logic && npx hardhat console --network localhost
+
+  docker exec -it mysql-blockchain mysql -u root -p
