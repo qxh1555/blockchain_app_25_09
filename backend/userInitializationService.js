@@ -53,5 +53,56 @@ async function initializeUserState(user, options = {}) {
     return { initialBalance: user.balance, inventory: initialInventory };
 }
 
-module.exports = { initializeUserState };
+/**
+ * 生成新的兑换规则（RedemptionRule）
+ * @param {number} userId - 用户ID
+ * @param {Array} allCommodities - 所有商品列表
+ * @param {object} options - 配置选项
+ * @param {object} [options.transaction] - Sequelize事务对象（可选）
+ * @returns {Promise<object>} 生成的 RedemptionRule 对象（包含关联的 RuleItems 和 Commodities）
+ */
+async function generateRedemptionRule(userId, allCommodities, options = {}) {
+    const { transaction } = options;
+    
+    // 选择两类商品，每类总共3~5个物品让玩家收集
+    // 首先打乱商品列表以便随机选择
+    const shuffledCommodities = allCommodities.sort(() => 0.5 - Math.random());
+    // 随机选两种类型（两类商品，不重复）
+    const numKinds = 2;
+    const selectedKinds = shuffledCommodities.slice(0, numKinds);
+
+    // 总的物品数量为3~5
+    const totalItemsToCollect = Math.floor(Math.random() * 3) + 3; // 3~5
+    // 每类至少1件，最多(totalItemsToCollect - (numKinds-1))
+    // 先为每类分配最少1件
+    let remaining = totalItemsToCollect - numKinds;
+    let quantities = Array(numKinds).fill(1);
+    // 随机分配剩余的物品
+    for (let i = 0; i < remaining; i++) {
+        const idx = Math.floor(Math.random() * numKinds);
+        quantities[idx] += 1;
+    }
+    const reward = 100 + totalItemsToCollect * 175;
+    const newRule = await db.RedemptionRule.create({ UserId: userId, reward }, { transaction });
+
+    const ruleItems = [];
+    for (let i = 0; i < numKinds; i++) {
+        ruleItems.push({
+            RedemptionRuleId: newRule.id,
+            CommodityId: selectedKinds[i].id,
+            quantity: quantities[i] // 每类需收集的数量
+        });
+    }
+    await db.RuleItem.bulkCreate(ruleItems, { transaction });
+
+    // 获取完整的 rule 数据（包含关联的 Commodity）
+    const rule = await db.RedemptionRule.findOne({
+        where: { id: newRule.id },
+        include: [{ model: db.RuleItem, include: [db.Commodity] }]
+    }, { transaction });
+
+    return rule;
+}
+
+module.exports = { initializeUserState, generateRedemptionRule };
 

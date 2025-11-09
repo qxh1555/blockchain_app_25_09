@@ -71,6 +71,7 @@ const GamePage = () => {
     const [showLeaderboard, setShowLeaderboard] = useState(false);
     const [leaderboardData, setLeaderboardData] = useState([]);
     const [debugMode, setDebugMode] = useState(false);
+    const [showRedemptionTooltip, setShowRedemptionTooltip] = useState(false);
 
     useEffect(() => {
         const token = sessionStorage.getItem('token');
@@ -389,6 +390,76 @@ const GamePage = () => {
                     {debugMode && (
                         <button className="btn btn-warning me-2" onClick={handleTriggerSettlement}>手动结算</button>
                     )}
+                    {self.redemptionRule && (() => {
+                        const redemptionItems = self.redemptionRule.RuleItems.map(item => {
+                            const commodity = gameState.commodities.find(c => c.id === item.CommodityId);
+                            const commodityName = commodity ? commodity.name : `商品 #${item.CommodityId}`;
+                            const currentQuantity = self.inventory[item.CommodityId] || 0;
+                            const hasEnough = currentQuantity >= item.quantity;
+                            return { name: commodityName, required: item.quantity, current: currentQuantity, hasEnough };
+                        });
+                        
+                        return (
+                            <div 
+                                className="position-relative d-inline-block me-2"
+                                onMouseEnter={() => setShowRedemptionTooltip(true)}
+                                onMouseLeave={() => setShowRedemptionTooltip(false)}
+                            >
+                                <button 
+                                    className="btn btn-success" 
+                                    disabled={!canRedeem()} 
+                                    onClick={handleRedeem}
+                                >
+                                    系统收购 (${self.redemptionRule.reward})
+                                </button>
+                                {showRedemptionTooltip && (
+                                    <div
+                                        className="position-absolute bg-dark text-white p-2 rounded shadow"
+                                        style={{
+                                            top: '100%',
+                                            left: '50%',
+                                            transform: 'translateX(-50%)',
+                                            marginTop: '5px',
+                                            minWidth: '200px',
+                                            maxWidth: '300px',
+                                            fontSize: '12px',
+                                            zIndex: 1000,
+                                            whiteSpace: 'normal',
+                                            lineHeight: '1.6',
+                                            pointerEvents: 'none'
+                                        }}
+                                    >
+                                        <div 
+                                            className="position-absolute"
+                                            style={{
+                                                top: '-5px',
+                                                left: '50%',
+                                                transform: 'translateX(-50%)',
+                                                width: 0,
+                                                height: 0,
+                                                borderLeft: '5px solid transparent',
+                                                borderRight: '5px solid transparent',
+                                                borderBottom: '5px solid #212529'
+                                            }}
+                                        />
+                                        <div className="fw-bold mb-1">需要消耗:</div>
+                                        {redemptionItems.map((item, idx) => (
+                                            <div key={idx} className={item.hasEnough ? 'text-success' : 'text-warning'}>
+                                                {item.name}: 需要{item.required} 已拥有{item.current} {item.hasEnough ? '✓' : '✗'}
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })()}
+                    <button 
+                        className="btn btn-info me-2" 
+                        disabled={self.balance < 300} 
+                        onClick={handleRefreshCommodities}
+                    >
+                        抽卡 ($300)
+                    </button>
                     <button className="btn btn-primary me-2" onClick={handleShowLeaderboard}>查看排行榜</button>
                     <button className="btn btn-secondary" onClick={handleLogout}>登出</button>
                 </div>
@@ -568,32 +639,6 @@ const GamePage = () => {
                             </form>
                         </div>
                     </div>
-                </div>
-
-                <div className="col-md-4">
-                    {false && self.redemptionRule && (
-                        <div className="card mb-4">
-                            <div className="card-body">
-                                <h4 className="card-title">Redemption Offer</h4>
-                                <p>Redeem for <strong>${self.redemptionRule.reward}</strong>:</p>
-                                <ul>
-                                    {self.redemptionRule.RuleItems.map(item => (
-                                        <li key={item.id}>{item.quantity}x {item.Commodity.name}</li>
-                                    ))}
-                                </ul>
-                                <button className="btn btn-success w-100" disabled={!canRedeem()} onClick={handleRedeem}>Redeem</button>
-                            </div>
-                        </div>
-                    )}
-
-                    {false && (
-                        <div className="card mb-4">
-                            <div className="card-body">
-                                <h4 className="card-title">Actions</h4>
-                                <button className="btn btn-info w-100" disabled={self.balance < 500} onClick={handleRefreshCommodities}>Refresh Commodities ($500)</button>
-                            </div>
-                        </div>
-                    )}
                 </div>
             </div>
         </div>

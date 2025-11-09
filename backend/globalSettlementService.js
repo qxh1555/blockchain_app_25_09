@@ -1,5 +1,5 @@
 const db = require('./db');
-const { initializeUserState } = require('./userInitializationService');
+const { initializeUserState, generateRedemptionRule } = require('./userInitializationService');
 const userModel = require('./models/user');
 const INITIAL_BALANCE = userModel.INITIAL_BALANCE;
 
@@ -94,6 +94,49 @@ async function performGlobalSettlement(io, gameState, broadcastGameState) {
         } catch (error) {
             await transaction.rollback();
             console.error(`[GlobalSettlement] Failed to settle user #${user.id}.`, error);
+        }
+    }
+
+    // Step 4: 为所有用户重新生成 redemptionRule
+    console.log('[GlobalSettlement] Regenerating redemption rules for all users...');
+    for (const user of allUsers) {
+        const transaction = await db.sequelize.transaction();
+        try {
+            // 删除旧的 redemptionRule 和相关的 RuleItems
+            const oldRule = await db.RedemptionRule.findOne({
+                where: { UserId: user.id },
+                include: [{ model: db.RuleItem }]
+            }, { transaction });
+
+            if (oldRule) {
+                // 删除所有相关的 RuleItems
+                await db.RuleItem.destroy({
+                    where: { RedemptionRuleId: oldRule.id },
+                    transaction
+                });
+                // 删除旧的 RedemptionRule
+                await db.RedemptionRule.destroy({
+                    where: { id: oldRule.id },
+                    transaction
+                });
+            }
+
+            // 生成新的 redemptionRule
+            const rule = await generateRedemptionRule(user.id, allCommodities, { transaction });
+
+            await transaction.commit();
+
+            // 更新 gameState 中的 redemptionRule
+            if (gameState.players[user.id]) {
+                gameState.players[user.id].redemptionRule = rule ? rule.toJSON() : null;
+            }
+
+            const totalItems = rule ? rule.RuleItems.reduce((sum, item) => sum + item.quantity, 0) : 0;
+            console.log(`[GlobalSettlement] Regenerated redemption rule for user #${user.id}. Reward: $${rule ? rule.reward : 0}, Items: ${totalItems}`);
+
+        } catch (error) {
+            await transaction.rollback();
+            console.error(`[GlobalSettlement] Failed to regenerate redemption rule for user #${user.id}.`, error);
         }
     }
 

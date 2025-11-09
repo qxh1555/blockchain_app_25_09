@@ -9,81 +9,81 @@ const { randomUUID } = require('crypto');
 const db = require('./db');
 const { batchOnChainTrades } = require('./onChainService');
 const { performGlobalSettlement, setLeaderboardSnapshotRef } = require('./globalSettlementService');
-const { initializeUserState } = require('./userInitializationService');
+const { initializeUserState, generateRedemptionRule } = require('./userInitializationService');
 
 // --- Blockchain Configuration ---
-const contractAddress = "0xDa5123B5aE9c6A48A579C6D7DdEaF81F04d56b7a";
+const contractAddress = "0x621C433B4192FDDaF2e8619D53EB7DE556a465cd";
 const contractABI = [
     {
-      "anonymous": false,
-      "inputs": [
-        { "indexed": false, "internalType": "string", "name": "tradeId", "type": "string" },
-        { "indexed": false, "internalType": "uint256", "name": "fromUserId", "type": "uint256" },
-        { "indexed": false, "internalType": "uint256", "name": "toUserId", "type": "uint256" },
-        { "indexed": false, "internalType": "uint256", "name": "timestamp", "type": "uint256" }
-      ],
-      "name": "TradeLogged",
-      "type": "event"
-    },
-    {
-      "anonymous": false,
-      "inputs": [
-        { "indexed": false, "internalType": "uint256", "name": "userId", "type": "uint256" },
-        { "indexed": false, "internalType": "uint256", "name": "redemptionRuleId", "type": "uint256" },
-        { "indexed": false, "internalType": "uint256", "name": "reward", "type": "uint256" },
-        { "indexed": false, "internalType": "uint256", "name": "timestamp", "type": "uint256" }
-      ],
-      "name": "RedemptionLogged",
-      "type": "event"
+        "anonymous": false,
+        "inputs": [
+            { "indexed": false, "internalType": "string", "name": "tradeId", "type": "string" },
+            { "indexed": false, "internalType": "uint256", "name": "fromUserId", "type": "uint256" },
+            { "indexed": false, "internalType": "uint256", "name": "toUserId", "type": "uint256" },
+            { "indexed": false, "internalType": "uint256", "name": "timestamp", "type": "uint256" }
+        ],
+        "name": "TradeLogged",
+        "type": "event"
     },
     {
         "anonymous": false,
         "inputs": [
-          { "indexed": false, "internalType": "uint256", "name": "userId", "type": "uint256" },
-          { "indexed": false, "internalType": "uint256", "name": "initialBalance", "type": "uint256" },
-          { "indexed": false, "internalType": "uint256", "name": "timestamp", "type": "uint256" }
+            { "indexed": false, "internalType": "uint256", "name": "userId", "type": "uint256" },
+            { "indexed": false, "internalType": "uint256", "name": "redemptionRuleId", "type": "uint256" },
+            { "indexed": false, "internalType": "uint256", "name": "reward", "type": "uint256" },
+            { "indexed": false, "internalType": "uint256", "name": "timestamp", "type": "uint256" }
+        ],
+        "name": "RedemptionLogged",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            { "indexed": false, "internalType": "uint256", "name": "userId", "type": "uint256" },
+            { "indexed": false, "internalType": "uint256", "name": "initialBalance", "type": "uint256" },
+            { "indexed": false, "internalType": "uint256", "name": "timestamp", "type": "uint256" }
         ],
         "name": "UserInitialized",
         "type": "event"
     },
     {
-      "inputs": [
-        { "internalType": "string", "name": "_tradeId", "type": "string" },
-        { "internalType": "uint256", "name": "_fromUserId", "type": "uint256" },
-        { "internalType": "uint256", "name": "_toUserId", "type": "uint256" },
-        { "internalType": "uint256", "name": "_commodityId", "type": "uint256" },
-        { "internalType": "uint256", "name": "_quantity", "type": "uint256" },
-        { "internalType": "uint256", "name": "_price", "type": "uint256" }
-      ],
-      "name": "addTrade",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
+        "inputs": [
+            { "internalType": "string", "name": "_tradeId", "type": "string" },
+            { "internalType": "uint256", "name": "_fromUserId", "type": "uint256" },
+            { "internalType": "uint256", "name": "_toUserId", "type": "uint256" },
+            { "internalType": "uint256", "name": "_commodityId", "type": "uint256" },
+            { "internalType": "uint256", "name": "_quantity", "type": "uint256" },
+            { "internalType": "uint256", "name": "_price", "type": "uint256" }
+        ],
+        "name": "addTrade",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
     },
     {
-      "inputs": [],
-      "name": "getTradeCount",
-      "outputs": [ { "internalType": "uint256", "name": "", "type": "uint256" } ],
-      "stateMutability": "view",
-      "type": "function"
+        "inputs": [],
+        "name": "getTradeCount",
+        "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+        "stateMutability": "view",
+        "type": "function"
     },
     {
-      "inputs": [
-        { "internalType": "uint256", "name": "_userId", "type": "uint256" },
-        { "internalType": "uint256", "name": "_redemptionRuleId", "type": "uint256" },
-        { "internalType": "uint256", "name": "_reward", "type": "uint256" }
-      ],
-      "name": "addRedemption",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
+        "inputs": [
+            { "internalType": "uint256", "name": "_userId", "type": "uint256" },
+            { "internalType": "uint256", "name": "_redemptionRuleId", "type": "uint256" },
+            { "internalType": "uint256", "name": "_reward", "type": "uint256" }
+        ],
+        "name": "addRedemption",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
     },
     {
-      "inputs": [],
-      "name": "getRedemptionCount",
-      "outputs": [ { "internalType": "uint256", "name": "", "type": "uint256" } ],
-      "stateMutability": "view",
-      "type": "function"
+        "inputs": [],
+        "name": "getRedemptionCount",
+        "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+        "stateMutability": "view",
+        "type": "function"
     },
     {
         "inputs": [
@@ -100,7 +100,7 @@ const contractABI = [
     {
         "inputs": [],
         "name": "getInitialStateCount",
-        "outputs": [ { "internalType": "uint256", "name": "", "type": "uint256" } ],
+        "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
         "stateMutability": "view",
         "type": "function"
     },
@@ -112,10 +112,12 @@ const contractABI = [
         "outputs": [
             { "internalType": "uint256", "name": "userId", "type": "uint256" },
             { "internalType": "uint256", "name": "initialBalance", "type": "uint256" },
-            { "components": [
-                { "internalType": "uint256", "name": "commodityId", "type": "uint256" },
-                { "internalType": "uint256", "name": "quantity", "type": "uint256" }
-            ], "internalType": "struct DataRegistry.InitialStateItem[]", "name": "inventory", "type": "tuple[]" },
+            {
+                "components": [
+                    { "internalType": "uint256", "name": "commodityId", "type": "uint256" },
+                    { "internalType": "uint256", "name": "quantity", "type": "uint256" }
+                ], "internalType": "struct DataRegistry.InitialStateItem[]", "name": "inventory", "type": "tuple[]"
+            },
             { "internalType": "uint256", "name": "timestamp", "type": "uint256" }
         ],
         "stateMutability": "view",
@@ -128,9 +130,9 @@ const provider = new ethers.JsonRpcProvider('http://127.0.0.1:8545');
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
-  cors: {
-    origin: '*'
-  },
+    cors: {
+        origin: '*'
+    },
 });
 
 app.use(cors());
@@ -147,76 +149,76 @@ async function initializeNewUserState(user) {
 
 // API Routes for Authentication
 app.post('/api/register', async (req, res) => {
-  const { username, password } = req.body;
-  if (!username || !password) {
-    return res.status(400).send('Username and password are required');
-  }
-
-  try {
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const user = await db.User.create({
-        username,
-        password: hashedPassword,
-    });
-
-    // Initialize user state (balance is default, create inventory) and record on-chain
-    const { initialBalance, inventory } = await initializeNewUserState(user);
+    const { username, password } = req.body;
+    if (!username || !password) {
+        return res.status(400).send('Username and password are required');
+    }
 
     try {
-        console.log(`[On-Chain] Initializing state for new user ${user.id}...`);
-        const signer = await provider.getSigner(0);
-        const contract = new ethers.Contract(contractAddress, contractABI, signer);
+        const hashedPassword = await bcrypt.hash(password, 10);
+        const user = await db.User.create({
+            username,
+            password: hashedPassword,
+        });
 
-        const commodityIds = inventory.map(item => item.commodityId);
-        const quantities = inventory.map(item => item.quantity);
+        // Initialize user state (balance is default, create inventory) and record on-chain
+        const { initialBalance, inventory } = await initializeNewUserState(user);
 
-        const tx = await contract.initializeUser(
-            user.id,
-            Math.round(initialBalance), // Pass balance as an integer
-            commodityIds,
-            quantities
-        );
-        await tx.wait();
-        console.log(`[On-Chain] Initial state for user ${user.id} successfully recorded. Tx hash: ${tx.hash}`);
-    } catch (onChainError) {
-        console.error(`[On-Chain] FAILED to record initial state for user ${user.id}. Error:`, onChainError.message);
-        // This is a non-fatal error. The primary state is in the DB.
+        try {
+            console.log(`[On-Chain] Initializing state for new user ${user.id}...`);
+            const signer = await provider.getSigner(0);
+            const contract = new ethers.Contract(contractAddress, contractABI, signer);
+
+            const commodityIds = inventory.map(item => item.commodityId);
+            const quantities = inventory.map(item => item.quantity);
+
+            const tx = await contract.initializeUser(
+                user.id,
+                Math.round(initialBalance), // Pass balance as an integer
+                commodityIds,
+                quantities
+            );
+            await tx.wait();
+            console.log(`[On-Chain] Initial state for user ${user.id} successfully recorded. Tx hash: ${tx.hash}`);
+        } catch (onChainError) {
+            console.error(`[On-Chain] FAILED to record initial state for user ${user.id}. Error:`, onChainError.message);
+            // This is a non-fatal error. The primary state is in the DB.
+        }
+
+        res.status(201).send({ message: 'User registered successfully', userId: user.id });
+    } catch (error) {
+        if (error.name === 'SequelizeUniqueConstraintError') {
+            return res.status(409).send('Username already exists');
+        }
+        console.error('Error registering user:', error);
+        res.status(500).send('Error registering user');
     }
-
-    res.status(201).send({ message: 'User registered successfully', userId: user.id });
-  } catch (error) {
-    if (error.name === 'SequelizeUniqueConstraintError') {
-      return res.status(409).send('Username already exists');
-    }
-    console.error('Error registering user:', error);
-    res.status(500).send('Error registering user');
-  }
 });
 
 app.post('/api/login', async (req, res) => {
-  const { username, password } = req.body;
-  if (!username || !password) {
-    return res.status(400).send('Username and password are required');
-  }
-
-  try {
-    const user = await db.User.findOne({ where: { username } });
-
-    if (!user) {
-      return res.status(401).send('Invalid credentials');
+    const { username, password } = req.body;
+    if (!username || !password) {
+        return res.status(400).send('Username and password are required');
     }
 
-    const match = await bcrypt.compare(password, user.password);
+    try {
+        const user = await db.User.findOne({ where: { username } });
 
-    if (match) {
-      const token = jwt.sign({ id: user.id, username: user.username }, '123456', { expiresIn: '1h' });
-      res.json({ token, userId: user.id, username: user.username });
-    } else {
-      res.status(401).send('Invalid credentials');
+        if (!user) {
+            return res.status(401).send('Invalid credentials');
+        }
+
+        const match = await bcrypt.compare(password, user.password);
+
+        if (match) {
+            const token = jwt.sign({ id: user.id, username: user.username }, '123456', { expiresIn: '1h' });
+            res.json({ token, userId: user.id, username: user.username });
+        } else {
+            res.status(401).send('Invalid credentials');
+        }
+    } catch (error) {
+        res.status(500).send('Error logging in');
     }
-  } catch (error) {
-    res.status(500).send('Error logging in');
-  }
 });
 
 
@@ -257,7 +259,7 @@ io.on('connection', (socket) => {
         if (!gameState.players[user.id]) {
             const dbUser = await db.User.findByPk(user.id);
             const userInventory = await db.Inventory.findAll({ where: { UserId: user.id } });
-            
+
             const inventoryMap = {};
             for (const item of userInventory) {
                 inventoryMap[item.CommodityId] = item.quantity;
@@ -272,27 +274,13 @@ io.on('connection', (socket) => {
             };
         }
 
-        let rule = await db.RedemptionRule.findOne({ 
+        let rule = await db.RedemptionRule.findOne({
             where: { UserId: user.id },
             include: [{ model: db.RuleItem, include: [db.Commodity] }]
         });
 
         if (!rule) {
-            const reward = Math.floor(Math.random() * 3001) + 2000;
-            const newRule = await db.RedemptionRule.create({ UserId: user.id, reward });
-            const numItems = Math.floor(Math.random() * 2) + 2;
-            const shuffledCommodities = allCommodities.sort(() => 0.5 - Math.random());
-            let selectedCommodities = shuffledCommodities.slice(0, numItems);
-            const ruleItems = [];
-            for (const commodity of selectedCommodities) {
-                const quantity = Math.floor(Math.random() * 7) + 1;
-                ruleItems.push({ RedemptionRuleId: newRule.id, CommodityId: commodity.id, quantity });
-            }
-            await db.RuleItem.bulkCreate(ruleItems);
-            rule = await db.RedemptionRule.findOne({ 
-                where: { id: newRule.id },
-                include: [{model: db.RuleItem, include: [db.Commodity]}]
-            });
+            rule = await generateRedemptionRule(user.id, allCommodities);
         }
 
         gameState.players[user.id].redemptionRule = rule ? rule.toJSON() : null;
@@ -307,7 +295,7 @@ io.on('connection', (socket) => {
     });
 
     socket.on('proposeTrade', async (tradeData) => {
-        const { fromUserId, toUserId, tradeDetails, tradeId } = tradeData; 
+        const { fromUserId, toUserId, tradeDetails, tradeId } = tradeData;
         const toSocket = connectedUsers[toUserId];
         try {
             await db.Trade.create({ id: tradeId, fromUserId, toUserId, commodityId: tradeDetails.commodityId, quantity: tradeDetails.quantity, price: tradeDetails.price, action: tradeDetails.action, status: 'pending' });
@@ -373,18 +361,18 @@ io.on('connection', (socket) => {
 
                 // Check if we need to trigger the batch on-chain process
                 const pendingOnChainCount = await db.Trade.count({
-                  where: { status: 'successful', onChain: false }
+                    where: { status: 'successful', onChain: false }
                 });
 
                 console.log(`[Trigger Check] Pending on-chain trades: ${pendingOnChainCount}`);
 
                 if (pendingOnChainCount >= 10) {
-                  console.log(`[Trigger Check] Threshold of 10 reached. Starting batch on-chain process in the background...`);
-                  // We call this without await to not block the response.
-                  // Errors will be logged by the service itself.
-                  batchOnChainTrades().catch(err => {
-                    console.error("[Trigger Check] Background on-chain process failed:", err);
-                  });
+                    console.log(`[Trigger Check] Threshold of 10 reached. Starting batch on-chain process in the background...`);
+                    // We call this without await to not block the response.
+                    // Errors will be logged by the service itself.
+                    batchOnChainTrades().catch(err => {
+                        console.error("[Trigger Check] Background on-chain process failed:", err);
+                    });
                 }
 
             } catch (error) {
@@ -403,7 +391,7 @@ io.on('connection', (socket) => {
 
     socket.on('redeem', async (userId) => {
         const user = await db.User.findByPk(userId);
-        const rule = await db.RedemptionRule.findOne({ 
+        const rule = await db.RedemptionRule.findOne({
             where: { UserId: userId },
             include: [{ model: db.RuleItem, include: [db.Commodity] }]
         });
@@ -452,34 +440,36 @@ io.on('connection', (socket) => {
 
     socket.on('refreshCommodities', async (userId) => {
         const user = await db.User.findByPk(userId);
-        const REFRESH_COST = 500;
+        const REFRESH_COST = 300;
 
         if (user.balance < REFRESH_COST) {
             return socket.emit('refreshResult', { success: false, message: 'Insufficient balance.' });
         }
 
         try {
+            let receivedCommodity = null;
             await db.sequelize.transaction(async (t) => {
                 user.balance -= REFRESH_COST;
                 await user.save({ transaction: t });
                 gameState.players[userId].balance = user.balance;
 
                 const allCommodities = await db.Commodity.findAll();
-                for (let i = 0; i < 5; i++) {
-                    const randomCommodity = allCommodities[Math.floor(Math.random() * allCommodities.length)];
-                    const inventory = await db.Inventory.findOne({ where: { UserId: userId, CommodityId: randomCommodity.id }, transaction: t });
-                    if (inventory) {
-                        inventory.quantity += 1;
-                        await inventory.save({ transaction: t });
-                    } else {
-                        await db.Inventory.create({ UserId: userId, CommodityId: randomCommodity.id, quantity: 1 }, { transaction: t });
-                    }
-                    gameState.players[userId].inventory[randomCommodity.id] = (gameState.players[userId].inventory[randomCommodity.id] || 0) + 1;
+                // 只发放一个物品
+                const randomCommodity = allCommodities[Math.floor(Math.random() * allCommodities.length)];
+                receivedCommodity = randomCommodity;
+
+                const inventory = await db.Inventory.findOne({ where: { UserId: userId, CommodityId: randomCommodity.id }, transaction: t });
+                if (inventory) {
+                    inventory.quantity += 1;
+                    await inventory.save({ transaction: t });
+                } else {
+                    await db.Inventory.create({ UserId: userId, CommodityId: randomCommodity.id, quantity: 1 }, { transaction: t });
                 }
+                gameState.players[userId].inventory[randomCommodity.id] = (gameState.players[userId].inventory[randomCommodity.id] || 0) + 1;
             });
 
             broadcastGameState();
-            socket.emit('refreshResult', { success: true, message: 'You received 5 new items!' });
+            socket.emit('refreshResult', { success: true, message: `你获得了: ${receivedCommodity.name}!` });
 
         } catch (error) {
             socket.emit('refreshResult', { success: false, message: 'An error occurred.' });
